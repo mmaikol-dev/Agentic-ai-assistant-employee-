@@ -206,6 +206,22 @@ function getCsrfToken(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content?.trim() ?? '';
 }
 
+function getXsrfTokenFromCookie(): string {
+    const tokenPart = document.cookie
+        .split('; ')
+        .find((part) => part.startsWith('XSRF-TOKEN='));
+
+    if (!tokenPart) return '';
+
+    const value = tokenPart.slice('XSRF-TOKEN='.length);
+
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
 function formatValue(key: string, value: unknown): string {
     if (value == null || value === '') return '—';
     if (key.includes('date') && typeof value === 'string') {
@@ -1065,6 +1081,11 @@ export default function Chat() {
         if (confirmingTaskId) return;
         setConfirmingTaskId(taskId);
         try {
+            const xsrfToken = getXsrfTokenFromCookie();
+            const csrfToken = getCsrfToken();
+            const csrfHeaders: Record<string, string> = xsrfToken
+                ? { 'X-XSRF-TOKEN': xsrfToken }
+                : (csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {});
             const response = await fetch(`/report-tasks/${taskId}/confirm`, {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -1072,7 +1093,7 @@ export default function Chat() {
                     Accept: 'application/json',
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': getCsrfToken(),
+                    ...csrfHeaders,
                 },
                 body: JSON.stringify({}),
             });
@@ -1123,6 +1144,11 @@ export default function Chat() {
         setIsTyping(true);
 
         try {
+            const xsrfToken = getXsrfTokenFromCookie();
+            const csrfToken = getCsrfToken();
+            const csrfHeaders: Record<string, string> = xsrfToken
+                ? { 'X-XSRF-TOKEN': xsrfToken }
+                : (csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {});
             const payloadMessages = nextMessages
                 .filter((m) => m.role !== 'assistant' || m.id !== assistantId)
                 .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
@@ -1136,7 +1162,7 @@ export default function Chat() {
                     'Content-Type': 'application/json',
                     Accept: 'application/x-ndjson',
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': getCsrfToken(),
+                    ...csrfHeaders,
                 },
                 body: JSON.stringify({
                     messages: payloadMessages,
