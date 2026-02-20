@@ -1,0 +1,59 @@
+<?php
+
+use App\Http\Controllers\ChatController;
+use App\Http\Controllers\FinancialReportExportController;
+use App\Http\Controllers\ReportTaskController;
+use App\Http\Controllers\WhatsappController;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Laravel\Fortify\Features;
+
+Route::get('/', function () {
+    return Inertia::render('welcome', [
+        'canRegister' => Features::enabled(Features::registration()),
+    ]);
+})->name('home');
+
+Route::get('dashboard', function () {
+    return Inertia::render('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::get('chat', function () {
+    return Inertia::render('chat', [
+        'ollamaModel' => config('services.ollama.model'),
+    ]);
+})->middleware(['auth', 'verified'])->name('chat');
+
+Route::post('chat/message', [ChatController::class, 'store'])
+    ->middleware(['auth', 'verified'])
+    ->name('chat.message');
+
+Route::post('chat/stream', [ChatController::class, 'stream'])
+    ->middleware(['auth', 'verified'])
+    ->name('chat.stream');
+
+Route::get('reports/financial/export', [FinancialReportExportController::class, 'download'])
+    ->middleware(['auth', 'verified'])
+    ->name('reports.financial.export');
+
+Route::get('report-tasks/{taskId}', [ReportTaskController::class, 'show'])
+    ->middleware(['auth', 'verified'])
+    ->name('report-tasks.show');
+
+Route::post('report-tasks/{taskId}/confirm', [ReportTaskController::class, 'confirm'])
+    ->middleware(['auth', 'verified'])
+    ->name('report-tasks.confirm');
+
+Route::post('whatsapp/send-chat', [WhatsappController::class, 'sendChat'])
+    ->middleware(['auth', 'verified'])
+    ->name('whatsapp.send-chat');
+
+Route::post('whatsapp/send-message/{id}', [WhatsappController::class, 'sendMessage'])
+    ->middleware(['auth', 'verified'])
+    ->name('whatsapp.send-message');
+
+Route::post('whatsapp/webhook', [WhatsappController::class, 'webhook'])
+    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
+    ->name('whatsapp.webhook');
+
+require __DIR__.'/settings.php';
