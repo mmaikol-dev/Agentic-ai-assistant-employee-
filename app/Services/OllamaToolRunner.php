@@ -222,6 +222,44 @@ class OllamaToolRunner
                 ],
             ],
         ],
+        [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'send_email',
+                'description' => 'Send an email via SendGrid.',
+                'parameters'  => [
+                    'type'       => 'object',
+                    'required'   => ['to', 'subject', 'content'],
+                    'properties' => [
+                        'to' => ['type' => 'string', 'description' => 'Recipient email address'],
+                        'subject' => ['type' => 'string', 'description' => 'Email subject'],
+                        'content' => ['type' => 'string', 'description' => 'Email body content'],
+                        'content_type' => ['type' => 'string', 'description' => 'text/plain or text/html'],
+                        'from_email' => ['type' => 'string', 'description' => 'Optional sender email'],
+                        'from_name' => ['type' => 'string', 'description' => 'Optional sender name'],
+                    ],
+                ],
+            ],
+        ],
+        [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'send_grid_email',
+                'description' => 'Send an email via SendGrid (alias of send_email).',
+                'parameters'  => [
+                    'type'       => 'object',
+                    'required'   => ['to', 'subject', 'content'],
+                    'properties' => [
+                        'to' => ['type' => 'string', 'description' => 'Recipient email address'],
+                        'subject' => ['type' => 'string', 'description' => 'Email subject'],
+                        'content' => ['type' => 'string', 'description' => 'Email body content'],
+                        'content_type' => ['type' => 'string', 'description' => 'text/plain or text/html'],
+                        'from_email' => ['type' => 'string', 'description' => 'Optional sender email'],
+                        'from_name' => ['type' => 'string', 'description' => 'Optional sender name'],
+                    ],
+                ],
+            ],
+        ],
     ];
 
     public function __construct(string $model, ?string $traceId = null)
@@ -408,6 +446,8 @@ class OllamaToolRunner
             'get_report_task_status' => $this->getReportTaskStatus($args),
             'setup_integration' => $this->setupIntegration($args),
             'send_whatsapp_message' => $this->sendWhatsappMessage($args),
+            'send_email' => $this->sendEmail($args),
+            'send_grid_email' => $this->sendEmail($args),
             default        => ['type' => 'error', 'message' => "Unknown tool: {$name}"],
         };
     }
@@ -1774,6 +1814,85 @@ PHP;
             'to' => (string) $args['to'],
             'provider' => (string) config('services.whatsapp.provider'),
             'result' => $result,
+        ];
+    }
+
+    private function sendEmail(array $args): array
+    {
+        $validator = Validator::make($args, [
+            'to' => ['required', 'email'],
+            'subject' => ['required', 'string', 'min:1', 'max:255'],
+            'content' => ['required', 'string', 'min:1'],
+            'content_type' => ['nullable', 'in:text/plain,text/html'],
+            'from_email' => ['nullable', 'email'],
+            'from_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['type' => 'error', 'message' => $validator->errors()->first()];
+        }
+
+        $apiKey = trim((string) config('services.sendgrid.api_key'));
+        if ($apiKey === '') {
+            return ['type' => 'error', 'message' => 'Missing SENDGRID_API_KEY.'];
+        }
+
+        $fromEmail = (string) ($args['from_email'] ?? config('services.sendgrid.from_email', config('mail.from.address')));
+        $fromName = (string) ($args['from_name'] ?? config('services.sendgrid.from_name', config('mail.from.name')));
+        if (trim($fromEmail) === '') {
+            return ['type' => 'error', 'message' => 'Missing sender email. Set SENDGRID_FROM_EMAIL or pass from_email.'];
+        }
+
+        $payload = [
+            'personalizations' => [[
+                'to' => [['email' => (string) $args['to']]],
+            ]],
+            'from' => array_filter([
+                'email' => $fromEmail,
+                'name' => $fromName !== '' ? $fromName : null,
+            ]),
+            'subject' => (string) $args['subject'],
+            'content' => [[
+                'type' => (string) ($args['content_type'] ?? 'text/plain'),
+                'value' => (string) $args['content'],
+            ]],
+        ];
+
+        $endpoint = (string) config('services.sendgrid.endpoint', 'https://api.sendgrid.com/v3/mail/send');
+        $timeout = (int) config('services.sendgrid.timeout', 15);
+
+        try {
+            $sendgridResponse = Http::timeout($timeout)
+                ->withToken($apiKey)
+                ->acceptJson()
+                ->post($endpoint, $payload);
+        } catch (\Throwable $e) {
+            return ['type' => 'error', 'message' => 'SendGrid request failed: '.$e->getMessage()];
+        }
+
+        if (! $sendgridResponse->successful()) {
+            $details = $sendgridResponse->json();
+            if (! is_array($details)) {
+                $details = ['body' => $sendgridResponse->body()];
+            }
+
+            return [
+                'type' => 'error',
+                'message' => 'SendGrid rejected the email request.',
+                'details' => $details,
+                'upstream_status' => $sendgridResponse->status(),
+            ];
+        }
+
+        $messageIdHeader = $sendgridResponse->header('x-message-id');
+        $messageId = is_array($messageIdHeader) ? ($messageIdHeader[0] ?? null) : $messageIdHeader;
+
+        return [
+            'type' => 'email_sent',
+            'to' => (string) $args['to'],
+            'subject' => (string) $args['subject'],
+            'status' => $sendgridResponse->status(),
+            'message_id' => is_string($messageId) && $messageId !== '' ? $messageId : null,
         ];
     }
 }

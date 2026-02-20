@@ -28,6 +28,15 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'sendgrid' => [
+        'api_key' => env('SENDGRID_API_KEY'),
+        'endpoint' => env('SENDGRID_ENDPOINT', 'https://api.sendgrid.com/v3/mail/send'),
+        'from_email' => env('SENDGRID_FROM_EMAIL', env('MAIL_FROM_ADDRESS')),
+        'from_name' => env('SENDGRID_FROM_NAME', env('MAIL_FROM_NAME')),
+        'sandbox' => (bool) env('SENDGRID_SANDBOX', false),
+        'timeout' => (int) env('SENDGRID_TIMEOUT', 15),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
@@ -62,6 +71,7 @@ return [
 
 ### Messaging Skill
 - Use `send_whatsapp_message` to send WhatsApp messages.
+- Use `send_email` for email requests (fallback: `send_grid_email`).
 - Validate recipient intent and keep confirmation concise.
 - If sending fails, return exact tool error and next fix step.
 

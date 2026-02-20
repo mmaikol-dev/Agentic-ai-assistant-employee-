@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\SendGridEmailTool;
+use App\Mcp\Tools\SendEmailTool;
 use App\Mcp\Tools\SendWhatsappMessageTool;
 use App\Mcp\Tools\FinancialReportTool;
 use App\Mcp\Tools\CreateOrderTool;
@@ -18,6 +20,8 @@ class OrdersServer extends Server
     protected string $instructions = 'Manages the sheet_orders table. Use tools to create, edit, list and query orders.';
 
     protected array $tools = [
+        SendEmailTool::class,
+        SendGridEmailTool::class,
         SendWhatsappMessageTool::class,
         FinancialReportTool::class,
         ListOrdersTool::class,

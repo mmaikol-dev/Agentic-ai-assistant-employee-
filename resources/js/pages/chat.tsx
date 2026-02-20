@@ -1060,6 +1060,21 @@ export default function Chat() {
         return latestAssistant.content.trim().length === 0 && !latestAssistant.toolResults?.length;
     }, [messages, isTyping]);
 
+    const waitingForPostToolNarration = useMemo(() => {
+        if (!isTyping) return false;
+        const latestAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+        if (!latestAssistant) return false;
+        const hasToolResults = (latestAssistant.toolResults ?? []).length > 0;
+        const hasToolCalls = (latestAssistant.toolCalls ?? []).length > 0;
+        const hasText = latestAssistant.content.trim().length > 0;
+        return hasToolResults && !hasText && !hasToolCalls;
+    }, [messages, isTyping]);
+
+    const activeAssistantId = useMemo(() => {
+        if (!isTyping) return null;
+        return [...messages].reverse().find((m) => m.role === 'assistant')?.id ?? null;
+    }, [messages, isTyping]);
+
     const showEmptyState = useMemo(() => messages.length === 0 && !isTyping, [messages.length, isTyping]);
 
     const pushToast = (toast: Omit<Toast, 'id'>) => {
@@ -1190,6 +1205,7 @@ export default function Chat() {
             let pendingAnswerChars = '';
             let animatorRunning = false;
             let hasThinkingStream = false;
+            let receivedToolResult = false;
             let latestContextUsage: ContextUsage | null = null;
             const toolResultTypes = new Set([
                 'orders_table',
@@ -1261,10 +1277,15 @@ export default function Chat() {
                 animatorRunning = true;
                 while (pendingAnswerChars.length > 0) {
                     const queueLength = pendingAnswerChars.length;
-                    const batchSize = queueLength > 1500 ? 120 : queueLength > 800 ? 64 : queueLength > 300 ? 24 : 6;
+                    const batchSize = receivedToolResult
+                        ? (queueLength > 1200 ? 30 : queueLength > 600 ? 18 : queueLength > 250 ? 10 : 4)
+                        : (queueLength > 1500 ? 120 : queueLength > 800 ? 64 : queueLength > 300 ? 24 : 6);
                     consumeDelta(pendingAnswerChars.slice(0, batchSize));
                     pendingAnswerChars = pendingAnswerChars.slice(batchSize);
-                    await sleep(queueLength > 600 ? 0 : 8);
+                    const delay = receivedToolResult
+                        ? (queueLength > 600 ? 10 : 16)
+                        : (queueLength > 600 ? 0 : 8);
+                    await sleep(delay);
                 }
                 animatorRunning = false;
             };
@@ -1342,6 +1363,7 @@ export default function Chat() {
                             eventType === 'tool_result' || toolResultTypes.has(eventType) || isToolResultError;
 
                         if (isToolResult) {
+                            receivedToolResult = true;
                             const wrappedResult = event['result'];
                             const result = (
                                 eventType === 'tool_result' &&
@@ -1537,6 +1559,12 @@ export default function Chat() {
                                                         onConfirmTask={onConfirmTask}
                                                         confirmingTaskId={confirmingTaskId}
                                                     />
+                                                    {isTyping && message.id === activeAssistantId && !message.content && (
+                                                        <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
+                                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                                            <span>Analyzing results and drafting response...</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -1548,7 +1576,12 @@ export default function Chat() {
                                                                 Report details are shown in the structured table above.
                                                             </p>
                                                         ) : (
-                                                            renderRichText(message.content)
+                                                            <>
+                                                                {renderRichText(message.content)}
+                                                                {isTyping && message.id === activeAssistantId && (
+                                                                    <span className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-slate-400 align-middle" />
+                                                                )}
+                                                            </>
                                                         )}
                                                     </div>
                                                 )}
@@ -1568,6 +1601,15 @@ export default function Chat() {
                                                 <span className="animate-bounce [animation-delay:150ms]">.</span>
                                                 <span className="animate-bounce [animation-delay:300ms]">.</span>
                                             </span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {waitingForPostToolNarration && (
+                                    <div className="flex justify-center pt-2">
+                                        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700 shadow-sm">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            <span>Still thinking through the table results...</span>
                                         </div>
                                     </div>
                                 )}
