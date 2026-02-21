@@ -305,6 +305,9 @@ Current server datetime is {$nowIso} ({$appTimezone}).
 You must create a `create_task` tool call with a complete payload for this request unless required fields are genuinely missing.
 If required fields are missing, ask one concise clarification question.
 For `schedule_type=one_time`, `run_at` must be a future datetime in the requested timezone.
+When the user gives a relative time (today, tonight, at 12:10am) resolve it against the current server datetime above.
+If the implied time today has already passed, choose the next valid future occurrence (typically tomorrow) and state that assumption.
+Do not ask the user for the current date/time because it is already provided above.
 Never fabricate task IDs, counts, task history tables, or placeholder links.
 Only mention links and task IDs returned by successful tool results.
 TXT;

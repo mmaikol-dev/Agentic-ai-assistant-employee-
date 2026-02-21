@@ -22,7 +22,7 @@ import {
     Gauge,
 } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -156,6 +156,11 @@ type ContextUsage = {
     context_used_pct: number;
     context_remaining: number;
     iteration?: number;
+};
+
+type ChatPageProps = {
+    initialConversationId?: string | null;
+    initialMessages?: ChatMessage[];
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -1123,11 +1128,14 @@ function OrderDetailsDialog({
 
 // ── Main Chat component ───────────────────────────────────────────────────────
 
-export default function Chat() {
-    const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
+export default function Chat({
+    initialConversationId = null,
+    initialMessages = starterMessages,
+}: ChatPageProps) {
+    const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [conversationId, setConversationId] = useState<string | null>(null);
+    const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({});
     const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
@@ -1159,6 +1167,11 @@ export default function Chat() {
     }, [messages, isTyping]);
 
     const showEmptyState = useMemo(() => messages.length === 0 && !isTyping, [messages.length, isTyping]);
+
+    useEffect(() => {
+        setMessages(initialMessages);
+        setConversationId(initialConversationId);
+    }, [initialConversationId, initialMessages]);
 
     const pushToast = (toast: Omit<Toast, 'id'>) => {
         const id = `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;

@@ -17,6 +17,12 @@ class TaskService
         $timezone = $this->resolveTimezone($payload['timezone'] ?? null);
         $scheduleType = (string) ($payload['schedule_type'] ?? 'immediate');
         $runAt = $this->normalizeRunAt($payload['run_at'] ?? null, $timezone);
+        $runAt = $this->adjustOneTimeRunAtForRelativeIntent(
+            $runAt,
+            $scheduleType,
+            $timezone,
+            $payload['original_user_request'] ?? null,
+        );
         $this->validateSchedule($scheduleType, $runAt, $timezone);
 
         $task = Task::create([
@@ -157,6 +163,52 @@ class TaskService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function adjustOneTimeRunAtForRelativeIntent(
+        ?Carbon $runAt,
+        string $scheduleType,
+        string $timezone,
+        mixed $originalUserRequest,
+    ): ?Carbon {
+        if ($scheduleType !== 'one_time' || $runAt === null || ! is_string($originalUserRequest)) {
+            return $runAt;
+        }
+
+        $requestText = strtolower(trim($originalUserRequest));
+        if ($requestText === '') {
+            return $runAt;
+        }
+
+        $mentionsRelativeDay = preg_match('/\b(today|tonight|this morning|this afternoon|this evening)\b/i', $requestText) === 1;
+        $mentionsThisYear = preg_match('/\bthis year\b/i', $requestText) === 1;
+
+        if (! $mentionsRelativeDay && ! $mentionsThisYear) {
+            return $runAt;
+        }
+
+        $now = now($timezone);
+
+        // If model produced an outdated year while user said "this year", align it.
+        if ($mentionsThisYear && $runAt->year !== $now->year) {
+            $runAt = $runAt->copy()->year($now->year);
+        }
+
+        if ($runAt->greaterThan($now)) {
+            return $runAt;
+        }
+
+        if ($mentionsRelativeDay) {
+            // Keep requested clock time, move to next valid occurrence.
+            $candidate = $now->copy()->setTime($runAt->hour, $runAt->minute, $runAt->second);
+            if ($candidate->lessThanOrEqualTo($now)) {
+                $candidate->addDay();
+            }
+
+            return $candidate;
+        }
+
+        return $runAt;
     }
 
     private function validateSchedule(string $scheduleType, ?Carbon $runAt, string $timezone): void

@@ -24,16 +24,6 @@ class ChatMemoryService
             }
         }
 
-        $existing = ChatConversation::query()
-            ->where('user_id', $userId)
-            ->orderByDesc('last_activity_at')
-            ->orderByDesc('created_at')
-            ->first();
-
-        if ($existing !== null) {
-            return $existing;
-        }
-
         return ChatConversation::query()->create([
             'user_id' => $userId,
             'last_activity_at' => now(),

@@ -5,6 +5,9 @@ use App\Http\Controllers\FinancialReportExportController;
 use App\Http\Controllers\ReportTaskController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\WhatsappController;
+use App\Models\ChatConversation;
+use App\Models\ChatMessage;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -19,9 +22,37 @@ Route::get('dashboard', function () {
     return Inertia::render('dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::get('chat', function () {
+Route::get('chat', function (Request $request) {
+    $selectedConversationId = $request->string('conversation')->toString();
+    $userId = (int) $request->user()->id;
+
+    $conversation = null;
+    if ($selectedConversationId !== '') {
+        $conversation = ChatConversation::query()
+            ->where('user_id', $userId)
+            ->where('id', $selectedConversationId)
+            ->first();
+    }
+
+    $initialMessages = [];
+    if ($conversation !== null) {
+        $initialMessages = ChatMessage::query()
+            ->where('conversation_id', $conversation->id)
+            ->orderBy('id')
+            ->get(['id', 'role', 'content'])
+            ->map(fn (ChatMessage $message): array => [
+                'id' => 'msg-'.$message->id,
+                'role' => (string) $message->role,
+                'content' => (string) $message->content,
+            ])
+            ->values()
+            ->all();
+    }
+
     return Inertia::render('chat', [
         'ollamaModel' => config('services.ollama.model'),
+        'initialConversationId' => $conversation?->id,
+        'initialMessages' => $initialMessages,
     ]);
 })->middleware(['auth', 'verified'])->name('chat');
 

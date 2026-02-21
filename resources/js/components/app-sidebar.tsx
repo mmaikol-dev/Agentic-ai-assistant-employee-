@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid, ListChecks } from 'lucide-react';
+import { BookOpen, Bot, Folder, LayoutGrid, ListChecks } from 'lucide-react';
+import { NavConversationHistory } from '@/components/nav-conversation-history';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -21,6 +22,11 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'AI Assistant',
+        href: '/chat',
+        icon: Bot,
     },
     {
         title: 'Tasks',
@@ -58,7 +64,8 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={mainNavItems} label="Pages" />
+                <NavConversationHistory />
             </SidebarContent>
 
             <SidebarFooter>
