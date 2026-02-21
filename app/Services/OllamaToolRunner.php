@@ -18,6 +18,7 @@ class OllamaToolRunner
     private string $baseUrl;
     private int $timeout;
     private ?string $traceId;
+    private ?int $userId;
 
     private array $tools = [
         [
@@ -225,6 +226,44 @@ class OllamaToolRunner
         [
             'type' => 'function',
             'function' => [
+                'name' => 'create_task',
+                'description' => 'Create a background task that runs immediately, at a future time, on a recurring cron schedule, or when an event condition becomes true.',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'title' => ['type' => 'string', 'description' => 'Short descriptive title for the task'],
+                        'description' => ['type' => 'string', 'description' => 'What this task will do'],
+                        'schedule_type' => ['type' => 'string', 'enum' => ['immediate', 'one_time', 'recurring', 'event_triggered']],
+                        'run_at' => ['type' => 'string', 'description' => 'ISO8601 datetime for one_time tasks'],
+                        'cron_expression' => ['type' => 'string', 'description' => 'Cron expression for recurring tasks'],
+                        'cron_human' => ['type' => 'string', 'description' => 'Human readable schedule description'],
+                        'event_condition' => ['type' => 'string', 'description' => 'Condition for event-triggered tasks'],
+                        'timezone' => ['type' => 'string', 'description' => 'IANA timezone e.g. Africa/Nairobi'],
+                        'priority' => ['type' => 'string', 'enum' => ['low', 'normal', 'high']],
+                        'execution_plan' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'step' => ['type' => 'integer'],
+                                    'action' => ['type' => 'string'],
+                                    'tool' => ['type' => 'string'],
+                                    'tool_input' => ['type' => 'object'],
+                                    'input_summary' => ['type' => 'string'],
+                                    'depends_on' => ['type' => 'array', 'items' => ['type' => 'integer']],
+                                ],
+                            ],
+                        ],
+                        'expected_output' => ['type' => 'string'],
+                        'original_user_request' => ['type' => 'string'],
+                    ],
+                    'required' => ['title', 'schedule_type'],
+                ],
+            ],
+        ],
+        [
+            'type' => 'function',
+            'function' => [
                 'name'        => 'send_email',
                 'description' => 'Send an email via SendGrid.',
                 'parameters'  => [
@@ -262,12 +301,13 @@ class OllamaToolRunner
         ],
     ];
 
-    public function __construct(string $model, ?string $traceId = null)
+    public function __construct(string $model, ?string $traceId = null, ?int $userId = null)
     {
         $this->model   = $model;
         $this->baseUrl = (string) config('services.ollama.base_url');
         $this->timeout = (int) config('services.ollama.timeout', 120);
         $this->traceId = $traceId;
+        $this->userId = $userId;
     }
 
     /**
@@ -410,7 +450,10 @@ class OllamaToolRunner
                 ]);
 
                 // Send structured result to frontend for rich rendering
-                $emit('tool_result', $result);
+                $emit('tool_result', [
+                    'tool' => $toolName,
+                    'result' => $result,
+                ]);
 
                 // Feed the result back into the conversation
                 $messages[] = [
@@ -446,10 +489,19 @@ class OllamaToolRunner
             'get_report_task_status' => $this->getReportTaskStatus($args),
             'setup_integration' => $this->setupIntegration($args),
             'send_whatsapp_message' => $this->sendWhatsappMessage($args),
+            'create_task' => $this->createTask($args),
             'send_email' => $this->sendEmail($args),
             'send_grid_email' => $this->sendEmail($args),
             default        => ['type' => 'error', 'message' => "Unknown tool: {$name}"],
         };
+    }
+
+    /**
+     * Execute one tool call directly (used by background task workers).
+     */
+    public function callTool(string $name, array $args = []): array
+    {
+        return $this->dispatchTool($name, $args);
     }
 
     // ── Tool implementations ─────────────────────────────────────────────────
@@ -1438,6 +1490,74 @@ PHP;
             'type' => 'task_workflow',
             'confirm_url' => route('report-tasks.confirm', ['taskId' => $task['id']]),
             'task_url' => route('report-tasks.show', ['taskId' => $task['id']]),
+        ];
+    }
+
+    private function createTask(array $args): array
+    {
+        if (is_string($args['execution_plan'] ?? null)) {
+            $decodedPlan = json_decode((string) $args['execution_plan'], true);
+            if (is_array($decodedPlan)) {
+                $args['execution_plan'] = $decodedPlan;
+            }
+        }
+
+        $validator = Validator::make($args, [
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'schedule_type' => ['required', 'in:immediate,one_time,recurring,event_triggered'],
+            'run_at' => ['nullable', 'date'],
+            'cron_expression' => ['nullable', 'string'],
+            'cron_human' => ['nullable', 'string'],
+            'event_condition' => ['nullable', 'string'],
+            'timezone' => ['nullable', 'string'],
+            'priority' => ['nullable', 'in:low,normal,high'],
+            'execution_plan' => ['nullable', 'array'],
+            'execution_plan.*.step' => ['nullable', 'integer'],
+            'execution_plan.*.action' => ['nullable', 'string'],
+            'execution_plan.*.tool' => ['nullable', 'string'],
+            'execution_plan.*.tool_input' => ['nullable', 'array'],
+            'execution_plan.*.input_summary' => ['nullable', 'string'],
+            'execution_plan.*.depends_on' => ['nullable', 'array'],
+            'expected_output' => ['nullable', 'string'],
+            'original_user_request' => ['nullable', 'string'],
+        ]);
+
+        if ($validator->fails()) {
+            return [
+                'type' => 'error',
+                'message' => $validator->errors()->first(),
+            ];
+        }
+
+        $userId = $this->userId ?? (auth()->id() ? (int) auth()->id() : null);
+        if ($userId === null) {
+            return [
+                'type' => 'error',
+                'message' => 'No authenticated user was found for task creation.',
+            ];
+        }
+
+        try {
+            $task = app(TaskService::class)->createFromToolCall($validator->validated(), $userId);
+        } catch (\Throwable $e) {
+            return [
+                'type' => 'error',
+                'message' => 'Failed to create task: '.$e->getMessage(),
+            ];
+        }
+
+        return [
+            'type' => 'task_created',
+            'id' => (string) $task->id,
+            'title' => (string) $task->title,
+            'status' => (string) $task->status,
+            'schedule_type' => (string) $task->schedule_type,
+            'run_at' => $task->run_at?->toIso8601String(),
+            'cron_human' => $task->cron_human,
+            'next_run_at' => $task->next_run_at?->toIso8601String(),
+            'task_url' => route('tasks.show', ['task' => $task->id]),
+            'message' => "Task '{$task->title}' created and available at /tasks/{$task->id}.",
         ];
     }
 

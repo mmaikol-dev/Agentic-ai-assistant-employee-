@@ -39,7 +39,14 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - Receive inbound/status webhooks (`/whatsapp/webhook`).
 - Provider abstraction supports Meta, Twilio, Africa's Talking, and custom APIs.
 
-### 6. Auth + Security Features
+### 6. Background Task Scheduling
+- Create and monitor assistant-created tasks at `/tasks`.
+- Supports `immediate`, `one_time`, `recurring`, and `event_triggered` task types.
+- One-time tasks are validated server-side: `run_at` must be a valid **future** datetime.
+- Task list now includes status filters for `scheduled`, `queued`, `running`, `completed`, and `failed`.
+- `scheduled` maps to queued/pending tasks so future jobs are visible before execution.
+
+### 7. Auth + Security Features
 - Laravel Fortify auth flows.
 - Email verification and optional two-factor auth settings.
 - Authenticated/verified route protection for core app features.
@@ -90,6 +97,10 @@ flowchart TD
 - `POST /whatsapp/send-chat`
 - `POST /whatsapp/send-message/{id}`
 - `POST /whatsapp/webhook`
+- `GET /tasks`
+- `GET /tasks/{task}`
+- `GET /tasks/{task}/stream`
+- `POST /api/tasks`
 
 ## Local Setup
 
@@ -122,4 +133,5 @@ WHATSAPP_PROVIDER=meta|twilio|africastalking|custom
 
 - Use a single host consistently (`127.0.0.1` **or** `localhost`) to avoid CSRF/session issues.
 - If MySQL is unavailable in local development, use file-based session/cache drivers.
+- Delayed tasks require a healthy DB queue + active worker (`php artisan queue:work`).
 - Some domain tables/models (orders, whatsapp, etc.) depend on your existing DB schema and data.

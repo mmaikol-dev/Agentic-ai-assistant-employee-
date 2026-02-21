@@ -3,6 +3,7 @@
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\FinancialReportExportController;
 use App\Http\Controllers\ReportTaskController;
+use App\Http\Controllers\TaskController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -55,5 +56,13 @@ Route::post('whatsapp/send-message/{id}', [WhatsappController::class, 'sendMessa
 Route::post('whatsapp/webhook', [WhatsappController::class, 'webhook'])
     ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
     ->name('whatsapp.webhook');
+
+Route::middleware(['auth', 'verified'])->group(function (): void {
+    Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
+    Route::get('tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');
+    Route::post('tasks/{task}/cancel', [TaskController::class, 'cancel'])->name('tasks.cancel');
+    Route::post('tasks/{task}/retry', [TaskController::class, 'retry'])->name('tasks.retry');
+    Route::get('tasks/{task}/stream', [TaskController::class, 'stream'])->name('tasks.stream');
+});
 
 require __DIR__.'/settings.php';

@@ -225,7 +225,11 @@ class ChatController extends Controller
         $messages = $this->prependSystemMessage($messages);
 
         return response()->stream(function () use ($model, $messages, $traceId, $conversation, $latestUserMessage): void {
-            $runner = new \App\Services\OllamaToolRunner($model, $traceId);
+            $runner = new \App\Services\OllamaToolRunner(
+                $model,
+                $traceId,
+                (int) $conversation->user_id,
+            );
             $assistantMessage = '';
             $completed = false;
             $latestContextUsage = null;
@@ -283,17 +287,34 @@ class ChatController extends Controller
         $basePrompt = (string) config('services.ollama.system_prompt', '');
         $skillsSection = (string) config('services.ollama.skills_section', '');
         $selectedSkill = $this->skillLoader->selectForMessages($messages);
+        $latestUserText = $this->latestUserMessage($messages);
+        $appTimezone = (string) config('app.timezone', 'UTC');
+        $nowIso = now($appTimezone)->toIso8601String();
         $activeSkill = null;
         if ($selectedSkill !== null) {
             $activeSkill = "## Active Skill: {$selectedSkill['name']}\n".
                 "Description: {$selectedSkill['description']}\n\n".
                 $selectedSkill['content'];
         }
+        $taskIntentDirective = null;
+        if ($this->hasTaskIntent($latestUserText)) {
+            $taskIntentDirective = <<<TXT
+## Active Task Intent
+The latest user message indicates scheduling/background intent.
+Current server datetime is {$nowIso} ({$appTimezone}).
+You must create a `create_task` tool call with a complete payload for this request unless required fields are genuinely missing.
+If required fields are missing, ask one concise clarification question.
+For `schedule_type=one_time`, `run_at` must be a future datetime in the requested timezone.
+Never fabricate task IDs, counts, task history tables, or placeholder links.
+Only mention links and task IDs returned by successful tool results.
+TXT;
+        }
 
         $parts = array_filter([
             trim($basePrompt),
             trim($skillsSection),
             trim((string) $activeSkill),
+            trim((string) $taskIntentDirective),
         ]);
 
         if ($parts === []) {
@@ -324,6 +345,18 @@ class ChatController extends Controller
         }
 
         return '';
+    }
+
+    private function hasTaskIntent(string $text): bool
+    {
+        if (trim($text) === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/\b(task|background|later|schedule|scheduled|every|daily|weekly|monthly|cron|monitor|watch|alert me|remind me|automatically|in \d+\s*(minute|minutes|hour|hours|day|days)|tomorrow|next week|end of day|at \d{1,2}:\d{2})\b/i',
+            $text
+        ) === 1;
     }
 
     /**

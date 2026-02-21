@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
+import { submitTaskToBackend, type TaskPayload } from '@/lib/task-parser';
 import type { BreadcrumbItem } from '@/types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -88,6 +89,15 @@ type ToolResult =
     }
     | { type: 'whatsapp_message_sent'; to: string; provider?: string; result?: Record<string, unknown> }
     | {
+        type: 'task_created';
+        id: string;
+        title: string;
+        status: string;
+        schedule_type: string;
+        task_url?: string;
+        message?: string;
+    }
+    | {
         type: 'task_workflow' | 'report_delivery_workflow';
         id: string;
         status: string;
@@ -117,6 +127,8 @@ type ToolResult =
 type ToolCall = {
     tool: string;
     args: Record<string, unknown>;
+    status?: 'running' | 'completed' | 'failed';
+    resultType?: string;
 };
 
 type ChatMessage = {
@@ -198,6 +210,7 @@ const TOOL_META: Record<string, { label: string; icon: ReactNode; color: string 
     get_order:    { label: 'Fetching order',   icon: <Package className="h-3 w-3" />,       color: 'text-violet-600 bg-violet-50 border-violet-200' },
     create_order: { label: 'Creating order',   icon: <PackagePlus className="h-3 w-3" />,   color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
     edit_order:   { label: 'Updating order',   icon: <PackageCheck className="h-3 w-3" />,  color: 'text-orange-600 bg-orange-50 border-orange-200' },
+    create_task:  { label: 'Scheduling task',  icon: <Gauge className="h-3 w-3" />,         color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200' },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -261,9 +274,49 @@ function splitHeuristicThinking(answerText: string, thinkingText: string): { ans
     };
 }
 
+function isTaskPayload(value: unknown): value is TaskPayload {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const data = value as Record<string, unknown>;
+    return (
+        typeof data.title === 'string' &&
+        typeof data.schedule_type === 'string' &&
+        ['immediate', 'one_time', 'recurring', 'event_triggered'].includes(data.schedule_type)
+    );
+}
+
 // ── Rich text renderer ────────────────────────────────────────────────────────
 
 function renderRichText(text: string): ReactNode {
+    const renderPlainWithLinks = (value: string, keyPrefix: string): ReactNode[] => {
+        const nodes: ReactNode[] = [];
+        const linkPattern = /(https?:\/\/[^\s)]+|\/(?:tasks|reports|report-tasks|chat|dashboard)[^\s)]*)/g;
+        const parts = value.split(linkPattern);
+
+        parts.forEach((part, index) => {
+            if (!part) return;
+            if (/^https?:\/\//.test(part) || /^\/(?:tasks|reports|report-tasks|chat|dashboard)/.test(part)) {
+                nodes.push(
+                    <a
+                        key={`${keyPrefix}-lnk-${index}`}
+                        href={part}
+                        className="underline underline-offset-2 hover:opacity-80"
+                        target={part.startsWith('http') ? '_blank' : undefined}
+                        rel={part.startsWith('http') ? 'noreferrer noopener' : undefined}
+                    >
+                        {part}
+                    </a>,
+                );
+                return;
+            }
+            nodes.push(<span key={`${keyPrefix}-txt-${index}`}>{part}</span>);
+        });
+
+        return nodes;
+    };
+
     const renderInline = (inlineText: string, keyPrefix: string): ReactNode[] => {
         const segments: ReactNode[] = [];
         const pattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
@@ -281,7 +334,13 @@ function renderRichText(text: string): ReactNode {
                 segments.push(<em key={`${keyPrefix}-i-${index}`} className="italic">{part.slice(1, -1)}</em>);
                 return;
             }
-            if (part.length > 0) segments.push(<span key={`${keyPrefix}-t-${index}`}>{part}</span>);
+            if (part.length > 0) {
+                segments.push(
+                    <span key={`${keyPrefix}-t-${index}`}>
+                        {renderPlainWithLinks(part, `${keyPrefix}-p-${index}`)}
+                    </span>,
+                );
+            }
         });
         return segments;
     };
@@ -449,11 +508,15 @@ function renderRichText(text: string): ReactNode {
 
 function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
     const meta = TOOL_META[toolCall.tool] ?? { label: toolCall.tool, icon: <Wrench className="h-3 w-3" />, color: 'text-slate-600 bg-slate-50 border-slate-200' };
+    const isRunning = (toolCall.status ?? 'running') === 'running';
+    const isFailed = toolCall.status === 'failed';
     return (
         <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${meta.color}`}>
             {meta.icon}
             <span>{meta.label}</span>
-            <Loader2 className="h-2.5 w-2.5 animate-spin opacity-60" />
+            {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin opacity-60" />}
+            {!isRunning && !isFailed && <CheckCircle2 className="h-2.5 w-2.5 opacity-70" />}
+            {isFailed && <AlertCircle className="h-2.5 w-2.5 opacity-70" />}
         </div>
     );
 }
@@ -683,8 +746,10 @@ function ToolResultsView({
     const infos: string[] = [];
     const errors: string[] = [];
     const reports: Extract<ToolResult, { type: 'financial_report' }>[] = [];
+    const orderTables: Extract<ToolResult, { type: 'orders_table' }>[] = [];
     const integrations: Array<Extract<ToolResult, { type: 'integration_requirements' | 'integration_setup' }>> = [];
     const messagingResults: Array<Extract<ToolResult, { type: 'whatsapp_message_sent' }>> = [];
+    const createdTasks: Array<Extract<ToolResult, { type: 'task_created' }>> = [];
     const taskResults: Array<Extract<ToolResult, { type: 'task_workflow' | 'report_delivery_workflow' }>> = [];
 
     for (const result of results) {
@@ -709,16 +774,17 @@ function ToolResultsView({
             messagingResults.push(result);
             continue;
         }
+        if (result.type === 'task_created') {
+            createdTasks.push(result);
+            continue;
+        }
         if (result.type === 'task_workflow' || result.type === 'report_delivery_workflow') {
             taskResults.push(result);
             continue;
         }
 
         if (result.type === 'orders_table') {
-            for (const row of result.orders) {
-                const key = String(row['id'] ?? row['order_no'] ?? JSON.stringify(row));
-                rowsByKey.set(key, row);
-            }
+            orderTables.push(result);
             continue;
         }
 
@@ -760,6 +826,23 @@ function ToolResultsView({
                     task={task}
                     onConfirmTask={onConfirmTask}
                     isConfirming={confirmingTaskId === task.id}
+                />
+            ))}
+            {createdTasks.map((task, i) => (
+                <div key={`created-task-${task.id}-${i}`} className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs text-fuchsia-900">
+                    <p className="font-semibold">{task.message ?? `Task "${task.title}" created.`}</p>
+                    {task.task_url && (
+                        <a href={task.task_url} className="mt-1 inline-flex items-center underline">
+                            View task
+                        </a>
+                    )}
+                </div>
+            ))}
+            {orderTables.map((table, i) => (
+                <OrdersTable
+                    key={`orders-table-${i}`}
+                    result={table}
+                    onViewOrder={onViewOrder}
                 />
             ))}
             {infos.map((message, i) => (
@@ -1207,6 +1290,7 @@ export default function Chat() {
             let hasThinkingStream = false;
             let receivedToolResult = false;
             let latestContextUsage: ContextUsage | null = null;
+            const pendingClientTasks: Array<{ payload: Record<string, unknown>; chatMessageId: string }> = [];
             const toolResultTypes = new Set([
                 'orders_table',
                 'order_detail',
@@ -1216,6 +1300,7 @@ export default function Chat() {
                 'integration_requirements',
                 'integration_setup',
                 'whatsapp_message_sent',
+                'task_created',
                 'task_workflow',
                 'report_delivery_workflow',
             ]);
@@ -1347,10 +1432,21 @@ export default function Chat() {
 
                         // ── Tool call in progress ────────────────────────────
                         if (event['type'] === 'tool_call') {
-                            const toolCall = { tool: String(event['tool'] ?? ''), args: (event['args'] as Record<string, unknown>) ?? {} };
+                            const toolCall: ToolCall = {
+                                tool: String(event['tool'] ?? ''),
+                                args: (event['args'] as Record<string, unknown>) ?? {},
+                                status: 'running',
+                            };
                             updateAssistantField(assistantId, (m) => ({
                                 toolCalls: [...(m.toolCalls ?? []), toolCall],
                             }));
+
+                            if (toolCall.tool === 'create_task') {
+                                pendingClientTasks.push({
+                                    payload: toolCall.args,
+                                    chatMessageId: assistantId,
+                                });
+                            }
                         }
 
                         // ── Tool result (structured data) ─────────────────────
@@ -1365,6 +1461,7 @@ export default function Chat() {
                         if (isToolResult) {
                             receivedToolResult = true;
                             const wrappedResult = event['result'];
+                            const toolName = String(event['tool'] ?? '');
                             const result = (
                                 eventType === 'tool_result' &&
                                 typeof wrappedResult === 'object' &&
@@ -1372,12 +1469,39 @@ export default function Chat() {
                                     ? wrappedResult
                                     : event
                             ) as ToolResult;
+                            const resultType = String((result as { type?: string }).type ?? '');
+                            const failed = resultType === 'error';
 
                             updateAssistantField(assistantId, (m) => ({
                                 toolResults: [...(m.toolResults ?? []), result],
-                                // Clear pending tool calls now that we have a result
-                                toolCalls: [],
+                                toolCalls: (() => {
+                                    const current = [...(m.toolCalls ?? [])];
+                                    for (let i = current.length - 1; i >= 0; i -= 1) {
+                                        const item = current[i];
+                                        if (
+                                            item.tool === toolName &&
+                                            (item.status ?? 'running') === 'running'
+                                        ) {
+                                            current[i] = {
+                                                ...item,
+                                                status: failed ? 'failed' : 'completed',
+                                                resultType,
+                                            };
+                                            break;
+                                        }
+                                    }
+                                    return current;
+                                })(),
                             }));
+
+                            if (result.type === 'task_created' && pendingClientTasks.length > 0) {
+                                pendingClientTasks.shift();
+                                pushToast({
+                                    type: 'success',
+                                    title: 'Task created',
+                                    description: result.task_url ? `Track it at ${result.task_url}` : result.message ?? result.title,
+                                });
+                            }
                         }
 
                         // ── Error ─────────────────────────────────────────────
@@ -1400,11 +1524,45 @@ export default function Chat() {
                 answer = t2.answer; thinking = t2.thinking;
             }
 
-            updateAssistantField(assistantId, (m) => ({
+            updateAssistantField(assistantId, () => ({
                 content: answer.trim(),
                 thinking: thinking.trim(),
-                toolCalls: [], // clear any lingering "in progress" indicators
             }));
+
+            for (const pendingTask of pendingClientTasks) {
+                if (!isTaskPayload(pendingTask.payload)) {
+                    continue;
+                }
+                const backendTask = await submitTaskToBackend(
+                    pendingTask.payload,
+                    pendingTask.chatMessageId,
+                );
+
+                if (!backendTask) {
+                    continue;
+                }
+
+                updateAssistantField(assistantId, (m) => ({
+                    toolResults: [
+                        ...(m.toolResults ?? []),
+                        {
+                            type: 'task_created',
+                            id: backendTask.task.id,
+                            title: backendTask.task.title,
+                            status: 'queued',
+                            schedule_type: 'immediate',
+                            task_url: `/tasks/${backendTask.task.id}`,
+                            message: backendTask.message,
+                        },
+                    ],
+                }));
+
+                pushToast({
+                    type: 'success',
+                    title: 'Task created',
+                    description: `Track it at /tasks/${backendTask.task.id}`,
+                });
+            }
 
             if (latestContextUsage) {
                 const pct = latestContextUsage.context_used_pct.toFixed(2);
