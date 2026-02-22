@@ -33,6 +33,11 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - **Execution orchestrator**: wraps tool calls with retries, backoff, simple alternative-argument strategy, and escalation when unrecoverable.
 - **Critic loop**: evaluates tool outputs (delivery, reporting plausibility, task creation integrity) and feeds critique telemetry back into the stream.
 - **Long-term memory service**: stores tool outcomes and conversation episodes for future retrieval.
+- **Semantic retry for model/schema tooling**: retries `model_schema_workspace` with corrected model/table arguments when resolution fails (for example `*_messages` table names).
+- **Fuzzy model/table resolution**: workspace resolver now maps close model/table names instead of requiring strict exact names.
+- **Domain mismatch guard**: for WhatsApp-intent requests, the runner blocks unrelated fallback tools (for example sheet/order/report drift) and keeps execution in the correct domain.
+- **Empty-final-response summary fallback**: when tools succeed but the model emits no final text, the runner synthesizes a concise result summary instead of a generic placeholder line.
+- **Generic tabular UI rendering**: the chat UI now auto-renders table-like tool results from any array-of-object payload, reducing per-tool frontend work for newly generated tools.
 
 ### 3. Financial Reporting
 - Export endpoint: `/reports/financial/export`
@@ -139,10 +144,32 @@ APP_TIMEZONE=UTC
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=your-model-name
 OLLAMA_TIMEOUT=120
+OLLAMA_ENABLE_DYNAMIC_TOOLS=true
 
 WHATSAPP_PROVIDER=meta|twilio|africastalking|custom
 # ...provider-specific keys...
 ```
+
+## Bootstrap Essentials (Do Not Delete)
+
+To keep autonomous tool discovery/scaffolding working, keep these files/services in place:
+
+- `app/Services/OllamaToolRunner.php`
+- `app/Services/ToolExecutionOrchestrator.php`
+- `app/Services/AgentPlannerService.php`
+- `app/Services/AgentToolPolicyService.php`
+- `app/Services/ToolCriticService.php`
+- `app/Services/McpToolInvokerService.php`
+- `app/Services/DynamicToolRegistryService.php`
+- `app/Mcp/Tools/ModelSchemaWorkspaceTool.php`
+- `app/Mcp/Tools/ScaffoldMcpTool.php`
+- `app/Mcp/Servers/OrdersServer.php`
+- `app/Http/Controllers/ChatController.php`
+- `routes/ai.php`
+- `config/services.php` (`ollama.*` settings)
+- `resources/ai/skills/` (keep root path; generated subfolders can be recreated)
+
+Safe cleanup target: generated domain tools/skills (`List*RecordsTool`, `Get*RecordTool`, and generated skill subfolders).
 
 ## Notes
 

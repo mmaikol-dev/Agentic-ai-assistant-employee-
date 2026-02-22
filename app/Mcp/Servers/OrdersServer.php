@@ -31,7 +31,7 @@ class OrdersServer extends Server
 {
     protected string $name = 'Orders Server';
     protected string $version = '1.0.0';
-    protected string $instructions = 'Manages the sheet_orders table. Use tools to create, edit, list and query orders.';
+    protected string $instructions = 'Manages operational data across orders, products, users, sheets, WhatsApp messages, and budget transactions. Use tools to list, query, create, and update records where supported.';
 
     protected array $tools = [
         GetBudgetTransactionRecordTool::class,
