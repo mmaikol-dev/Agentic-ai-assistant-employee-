@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mcp\Tools\ModelSchemaWorkspaceTool;
 use App\Models\SheetOrder;
 use App\Services\ReportTaskService;
 use App\Services\Whatsapp\WhatsappMessageSender;
@@ -19,6 +20,19 @@ class OllamaToolRunner
     private int $timeout;
     private ?string $traceId;
     private ?int $userId;
+    private AgentToolPolicyService $policy;
+    private AgentPlannerService $planner;
+    private ToolExecutionOrchestrator $orchestrator;
+    private ToolCriticService $critic;
+    private AgentMemoryService $memory;
+    private McpToolInvokerService $mcpInvoker;
+    private bool $dynamicToolsEnabled = false;
+    private ?string $requestDomain = null;
+
+    /**
+     * @var array<string, class-string>
+     */
+    private array $mcpToolMap = [];
 
     private array $tools = [
         [
@@ -85,6 +99,7 @@ class OllamaToolRunner
                         'status'        => ['type' => 'string'],
                         'agent'         => ['type' => 'string'],
                         'store_name'    => ['type' => 'string'],
+                        'confirmed'     => ['type' => 'boolean', 'description' => 'Explicit confirmation for high-risk action'],
                         'comments'      => ['type' => 'string'],
                         'instructions'  => ['type' => 'string'],
                     ],
@@ -137,6 +152,25 @@ class OllamaToolRunner
                         'task_notes' => ['type' => 'string', 'description' => 'Optional implementation notes inserted into the generated handle()'],
                         'register_in_orders_server' => ['type' => 'boolean', 'description' => 'Register tool in OrdersServer (default true)'],
                         'overwrite' => ['type' => 'boolean', 'description' => 'Overwrite tool file if it exists (default false)'],
+                    ],
+                ],
+            ],
+        ],
+        [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'model_schema_workspace',
+                'description' => 'Inspect app/Models and database table schemas, then scaffold table-specific MCP tools (list/get/create/update).',
+                'parameters'  => [
+                    'type'       => 'object',
+                    'required'   => ['action'],
+                    'properties' => [
+                        'action' => ['type' => 'string', 'enum' => ['list_models', 'describe_model', 'scaffold_tools']],
+                        'model' => ['type' => 'string', 'description' => 'Model name or class, e.g. User or App\\Models\\User'],
+                        'table' => ['type' => 'string', 'description' => 'Table name override, e.g. users'],
+                        'operations' => ['type' => 'array', 'description' => 'For scaffold_tools: operations list from list,get,create,update'],
+                        'register_in_orders_server' => ['type' => 'boolean', 'description' => 'Register generated tools in OrdersServer (default true)'],
+                        'overwrite' => ['type' => 'boolean', 'description' => 'Overwrite generated files when true'],
                     ],
                 ],
             ],
@@ -219,6 +253,7 @@ class OllamaToolRunner
                     'properties' => [
                         'to' => ['type' => 'string', 'description' => 'Recipient phone number in international format, e.g. +2547...'],
                         'message' => ['type' => 'string', 'description' => 'Message body to send'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Explicit confirmation for high-risk action'],
                     ],
                 ],
             ],
@@ -256,6 +291,7 @@ class OllamaToolRunner
                         ],
                         'expected_output' => ['type' => 'string'],
                         'original_user_request' => ['type' => 'string'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Optional explicit confirmation to propagate to high-risk steps in execution_plan'],
                     ],
                     'required' => ['title', 'schedule_type'],
                 ],
@@ -276,6 +312,7 @@ class OllamaToolRunner
                         'content_type' => ['type' => 'string', 'description' => 'text/plain or text/html'],
                         'from_email' => ['type' => 'string', 'description' => 'Optional sender email'],
                         'from_name' => ['type' => 'string', 'description' => 'Optional sender name'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Explicit confirmation for high-risk action'],
                     ],
                 ],
             ],
@@ -295,6 +332,7 @@ class OllamaToolRunner
                         'content_type' => ['type' => 'string', 'description' => 'text/plain or text/html'],
                         'from_email' => ['type' => 'string', 'description' => 'Optional sender email'],
                         'from_name' => ['type' => 'string', 'description' => 'Optional sender name'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Explicit confirmation for high-risk action'],
                     ],
                 ],
             ],
@@ -308,6 +346,17 @@ class OllamaToolRunner
         $this->timeout = (int) config('services.ollama.timeout', 120);
         $this->traceId = $traceId;
         $this->userId = $userId;
+        $this->policy = app(AgentToolPolicyService::class);
+        $this->planner = app(AgentPlannerService::class);
+        $this->orchestrator = app(ToolExecutionOrchestrator::class);
+        $this->critic = app(ToolCriticService::class);
+        $this->memory = app(AgentMemoryService::class);
+        $this->mcpInvoker = app(McpToolInvokerService::class);
+
+        $this->dynamicToolsEnabled = (bool) config('services.ollama.enable_dynamic_tools', true);
+        if ($this->dynamicToolsEnabled) {
+            $this->refreshDynamicToolRegistry();
+        }
     }
 
     /**
@@ -321,6 +370,20 @@ class OllamaToolRunner
     {
         $maxIterations = 8; // safety cap against infinite loops
         $toolCallsCount = 0;
+        $confirmedTaskCreated = false;
+        $latestUserPrompt = $this->latestUserPrompt($messages);
+        $this->requestDomain = $this->inferRequestDomain($latestUserPrompt);
+        $executedToolNames = [];
+        $successfulToolResults = [];
+        $toolOutcomeSummary = [];
+        $emit('status', ['phase' => 'planning']);
+        $plan = $this->planner->buildPlan($messages, $this->tools, $this->model, $this->baseUrl, $this->timeout);
+
+        $emit('plan', ['plan' => $plan]);
+        $messages[] = [
+            'role' => 'system',
+            'content' => $this->renderPlanDirective($plan),
+        ];
 
         Log::info('Ollama tool runner started', [
             'trace_id' => $this->traceId,
@@ -356,6 +419,7 @@ class OllamaToolRunner
                     'message' => 'Could not connect to Ollama.',
                     'details' => 'Check OLLAMA_BASE_URL and confirm the Ollama server is running.',
                 ]);
+                $emit('done', []);
                 return;
             } catch (\Throwable $e) {
                 Log::error('Ollama tool runner unexpected request error', [
@@ -367,6 +431,7 @@ class OllamaToolRunner
                     'message' => 'Unexpected error calling Ollama.',
                     'details' => $e->getMessage(),
                 ]);
+                $emit('done', []);
                 return;
             }
 
@@ -374,13 +439,61 @@ class OllamaToolRunner
                 Log::warning('Ollama tool runner non-success response', [
                     'trace_id' => $this->traceId,
                     'upstream_status' => $response->status(),
+                    'upstream_body' => $response->body(),
                 ]);
+
+                $details = (string) $response->body();
+                if (
+                    $response->status() === 400
+                    && str_contains(strtolower($details), 'looks like object')
+                    && str_contains(strtolower($details), 'closing')
+                ) {
+                    $fallbackMessages = collect($messages)
+                        ->reject(function (array $message): bool {
+                            $content = (string) ($message['content'] ?? '');
+                            $role = (string) ($message['role'] ?? '');
+                            return str_starts_with($content, 'Execution Plan:') || $role === 'tool';
+                        })
+                        ->map(function (array $message): array {
+                            $content = (string) ($message['content'] ?? '');
+                            if (strlen($content) > 3000) {
+                                $content = substr($content, 0, 3000).'...';
+                            }
+                            return [
+                                'role' => (string) ($message['role'] ?? 'user'),
+                                'content' => $content,
+                            ];
+                        })
+                        ->values()
+                        ->all();
+
+                    try {
+                        $fallbackResponse = Http::baseUrl($this->baseUrl)
+                            ->timeout($this->timeout)
+                            ->acceptJson()
+                            ->post('/api/chat', [
+                                'model' => $this->model,
+                                'messages' => $fallbackMessages,
+                                'stream' => false,
+                            ]);
+
+                        if ($fallbackResponse->successful()) {
+                            $fallbackContent = (string) data_get($fallbackResponse->json(), 'message.content', '');
+                            $this->emitStreamedText($fallbackContent, $emit);
+                            $emit('done', []);
+                            return;
+                        }
+                    } catch (\Throwable) {
+                        // Keep original error response below.
+                    }
+                }
 
                 $emit('error', [
                     'message'         => 'Ollama request failed.',
-                    'details'         => $response->body(),
+                    'details'         => $details,
                     'upstream_status' => $response->status(),
                 ]);
+                $emit('done', []);
                 return;
             }
 
@@ -403,6 +516,29 @@ class OllamaToolRunner
 
             // ── No tool calls → final answer, stream it and finish ──────────
             if (empty($toolCalls)) {
+                if ($this->shouldUseProductInventoryFallback($latestUserPrompt, $executedToolNames)) {
+                    $fallbackContent = $this->runProductInventoryFallback($emit, $toolOutcomeSummary, $executedToolNames);
+                    if ($fallbackContent !== null) {
+                        $this->emitStreamedText($fallbackContent, $emit);
+                        $emit('done', []);
+
+                        Log::info('Ollama tool runner completed via product fallback', [
+                            'trace_id' => $this->traceId,
+                            'iterations' => $i + 1,
+                            'tool_calls' => $toolCallsCount,
+                            'response_chars' => strlen($fallbackContent),
+                        ]);
+
+                        return;
+                    }
+                }
+
+                $content = $this->sanitizeFinalAssistantContent(
+                    content: (string) $content,
+                    confirmedTaskCreated: $confirmedTaskCreated,
+                    toolOutcomeSummary: $toolOutcomeSummary,
+                    successfulToolResults: $successfulToolResults,
+                );
                 $this->emitStreamedText($content, $emit);
                 $emit('done', []);
 
@@ -422,10 +558,19 @@ class OllamaToolRunner
                 $toolName = data_get($toolCall, 'function.name', '');
                 $toolArgs = data_get($toolCall, 'function.arguments', []);
                 $toolCallsCount++;
+                $executedToolNames[] = $toolName;
 
                 // Ollama sometimes returns arguments as a JSON string
                 if (is_string($toolArgs)) {
                     $toolArgs = json_decode($toolArgs, true) ?? [];
+                }
+                if (
+                    is_array($toolArgs)
+                    && ! array_key_exists('confirmed', $toolArgs)
+                    && $this->isHighRiskTool($toolName)
+                    && $this->hasExplicitConfirmationMessage($messages)
+                ) {
+                    $toolArgs['confirmed'] = true;
                 }
 
                 Log::debug('Ollama tool runner tool call', [
@@ -437,8 +582,82 @@ class OllamaToolRunner
                 // Tell frontend which tool is being invoked
                 $emit('tool_call', ['tool' => $toolName, 'args' => $toolArgs]);
 
-                // Execute the tool
-                $result = $this->dispatchTool($toolName, $toolArgs);
+                $policy = $this->policy->authorize($toolName, $toolArgs);
+                if (! $policy['allowed']) {
+                    $result = [
+                        'type' => 'policy_blocked',
+                        'tool' => $toolName,
+                        'risk' => $policy['risk'],
+                        'message' => $policy['reason'],
+                    ];
+                } elseif (($domainError = $this->domainMismatchError($toolName, is_array($toolArgs) ? $toolArgs : [])) !== null) {
+                    $result = [
+                        'type' => 'error',
+                        'tool' => $toolName,
+                        'message' => $domainError,
+                    ];
+                } else {
+                    $result = $this->orchestrator->execute(
+                        $toolName,
+                        $toolArgs,
+                        fn (string $name, array $args): array => $this->dispatchTool($name, $args),
+                    );
+                }
+
+                $critique = $this->critic->evaluate($toolName, $result);
+                $result['_policy'] = [
+                    'risk' => $policy['risk'],
+                    'requires_confirmation' => $policy['requires_confirmation'],
+                ];
+                $result['_critic'] = $critique;
+                $toolOutcomeSummary[] = [
+                    'tool' => $toolName,
+                    'type' => $result['type'] ?? null,
+                    'ok' => $critique['ok'],
+                    'message' => $result['message'] ?? null,
+                ];
+                if (! in_array((string) ($result['type'] ?? ''), ['error', 'policy_blocked'], true)) {
+                    $successfulToolResults[] = [
+                        'tool' => $toolName,
+                        'result' => $result,
+                    ];
+                }
+                if ($toolName === 'create_task' && ($result['type'] ?? null) === 'task_created') {
+                    $confirmedTaskCreated = true;
+                }
+                if (
+                    $toolName === 'model_schema_workspace'
+                    && ($result['type'] ?? null) === 'model_workspace'
+                    && (($result['action'] ?? null) === 'scaffold_tools')
+                ) {
+                    $this->refreshDynamicToolRegistry();
+                    $emit('status', ['phase' => 'executing', 'note' => 'Tool registry refreshed']);
+                }
+
+                $emit('critic', [
+                    'tool' => $toolName,
+                    ...$critique,
+                ]);
+
+                if ($this->userId !== null) {
+                    $summary = json_encode([
+                        'tool' => $toolName,
+                        'result_type' => $result['type'] ?? null,
+                        'critic_ok' => $critique['ok'],
+                    ]);
+                    $this->memory->storeEpisode(
+                        userId: $this->userId,
+                        scope: 'tool_outcome',
+                        memoryKey: $toolName,
+                        content: is_string($summary) ? $summary : $toolName,
+                        metadata: [
+                            'tool' => $toolName,
+                            'result_type' => $result['type'] ?? null,
+                            'risk' => $policy['risk'],
+                            'critic' => $critique,
+                        ],
+                    );
+                }
 
                 Log::debug('Ollama tool runner tool result', [
                     'trace_id' => $this->traceId,
@@ -458,7 +677,7 @@ class OllamaToolRunner
                 // Feed the result back into the conversation
                 $messages[] = [
                     'role'    => 'tool',
-                    'content' => json_encode($result),
+                    'content' => $this->compactToolResultForModel($result),
                 ];
             }
 
@@ -472,6 +691,372 @@ class OllamaToolRunner
         ]);
 
         $emit('error', ['message' => 'Max tool iterations reached without a final response.']);
+        $emit('done', []);
+    }
+
+    /**
+     * @param array<int, array{tool: string, type: mixed, ok: mixed, message?: mixed}> $toolOutcomeSummary
+     * @param array<int, array{tool: string, result: array<string, mixed>}> $successfulToolResults
+     */
+    private function sanitizeFinalAssistantContent(
+        string $content,
+        bool $confirmedTaskCreated,
+        array $toolOutcomeSummary,
+        array $successfulToolResults
+    ): string
+    {
+        $trimmed = trim($content);
+        if ($trimmed === '') {
+            if ($toolOutcomeSummary !== []) {
+                $failed = collect($toolOutcomeSummary)
+                    ->first(fn (array $row): bool => in_array((string) ($row['type'] ?? ''), ['error', 'policy_blocked'], true));
+                if (is_array($failed)) {
+                    $tool = (string) ($failed['tool'] ?? 'tool');
+                    $message = trim((string) ($failed['message'] ?? ''));
+                    if ($message !== '') {
+                        return "I could not complete the request because {$tool} failed: {$message}";
+                    }
+
+                    return "I could not complete the request because {$tool} failed.";
+                }
+
+                $summary = $this->summarizeSuccessfulToolResults($successfulToolResults);
+                if ($summary !== null) {
+                    return $summary;
+                }
+
+                return 'I completed processing the request. Please review the tool results above for details.';
+            }
+
+            return 'I could not generate a response this time. Please retry your request.';
+        }
+
+        $claimsTaskCreated = preg_match('/\b(task (was|is|has been)?\s*created|created successfully|task id|\/tasks\/)\b/i', $trimmed) === 1;
+        if ($claimsTaskCreated && ! $confirmedTaskCreated) {
+            return "I could not verify task creation from tool results, so I won't confirm it yet. Please ask me to create the task again.";
+        }
+
+        $aligned = $this->alignFinalContentWithToolResults($trimmed, $successfulToolResults);
+        if ($aligned !== null) {
+            return $aligned;
+        }
+
+        return $trimmed;
+    }
+
+    /**
+     * @param array<int, array{tool: string, result: array<string, mixed>}> $successfulToolResults
+     */
+    private function summarizeSuccessfulToolResults(array $successfulToolResults): ?string
+    {
+        if ($successfulToolResults === []) {
+            return null;
+        }
+
+        $summaries = [];
+
+        foreach ($successfulToolResults as $entry) {
+            $tool = (string) ($entry['tool'] ?? 'tool');
+            $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+            $type = (string) ($result['type'] ?? '');
+
+            if ($type === 'model_workspace') {
+                $action = (string) ($result['action'] ?? '');
+                if ($action === 'list_models') {
+                    $count = (int) ($result['count'] ?? 0);
+                    $summaries[] = "Model workspace listed {$count} model(s).";
+                    continue;
+                }
+                if ($action === 'describe_model') {
+                    $model = (string) ($result['model'] ?? 'unknown model');
+                    $table = (string) ($result['table'] ?? 'unknown table');
+                    $columns = is_array($result['columns'] ?? null) ? count($result['columns']) : 0;
+                    $summaries[] = "Model {$model} maps to table {$table} with {$columns} column(s).";
+                    continue;
+                }
+                if ($action === 'scaffold_tools') {
+                    $created = is_array($result['created'] ?? null) ? count($result['created']) : 0;
+                    $skipped = is_array($result['skipped'] ?? null) ? count($result['skipped']) : 0;
+                    $summaries[] = "Tool scaffolding completed (created {$created}, skipped {$skipped}).";
+                    continue;
+                }
+            }
+
+            if ($type === 'orders_table') {
+                $total = (int) ($result['total'] ?? 0);
+                $page = (int) ($result['current_page'] ?? 1);
+                $lastPage = (int) ($result['last_page'] ?? 1);
+                $summaries[] = "Found {$total} order(s) (page {$page} of {$lastPage}).";
+                continue;
+            }
+
+            if ($type === 'list_product_records') {
+                $total = (int) ($result['total'] ?? 0);
+                $page = (int) ($result['current_page'] ?? 1);
+                $lastPage = (int) ($result['last_page'] ?? 1);
+                $summaries[] = "Found {$total} product record(s) (page {$page} of {$lastPage}).";
+                continue;
+            }
+
+            if ($type === 'list_user_records') {
+                $total = (int) ($result['total'] ?? 0);
+                $page = (int) ($result['current_page'] ?? 1);
+                $lastPage = (int) ($result['last_page'] ?? 1);
+                $summaries[] = "Found {$total} user record(s) (page {$page} of {$lastPage}).";
+                continue;
+            }
+
+            if ($type === 'financial_report') {
+                $orders = (int) ($result['total_orders'] ?? 0);
+                $revenue = (float) ($result['total_revenue'] ?? 0);
+                $summaries[] = 'Financial report generated: '
+                    .$orders.' order(s), total revenue '.number_format($revenue, 2).'.';
+                continue;
+            }
+
+            if ($type === 'task_created') {
+                $id = (string) ($result['id'] ?? '');
+                $title = (string) ($result['title'] ?? 'task');
+                $summaries[] = $id !== ''
+                    ? "Task \"{$title}\" was created (ID: {$id})."
+                    : "Task \"{$title}\" was created.";
+                continue;
+            }
+
+            $message = trim((string) ($result['message'] ?? ''));
+            if ($message !== '') {
+                $summaries[] = ucfirst(str_replace('_', ' ', $tool)).': '.$message;
+                continue;
+            }
+
+            if ($type !== '') {
+                $summaries[] = ucfirst(str_replace('_', ' ', $tool))." completed ({$type}).";
+            }
+        }
+
+        $summaries = array_values(array_unique(array_filter($summaries, fn (string $line): bool => $line !== '')));
+        if ($summaries === []) {
+            return null;
+        }
+
+        return implode(' ', array_slice($summaries, 0, 4));
+    }
+
+    /**
+     * @param array<int, array{tool: string, result: array<string, mixed>}> $successfulToolResults
+     */
+    private function alignFinalContentWithToolResults(string $content, array $successfulToolResults): ?string
+    {
+        $lower = strtolower($content);
+
+        $productResult = collect($successfulToolResults)
+            ->map(fn (array $row): array => $row['result'] ?? [])
+            ->first(fn (array $result): bool => ($result['type'] ?? null) === 'list_product_records');
+
+        if (is_array($productResult) && $this->contentDeniesProductTool($lower)) {
+            $rows = is_array($productResult['rows'] ?? null) ? $productResult['rows'] : [];
+            $total = (int) ($productResult['total'] ?? count($rows));
+            $stock = collect($rows)
+                ->sum(fn ($row): float => (float) (is_array($row) ? ($row['quantity'] ?? 0) : 0));
+
+            return "I found {$total} products with total stock {$stock}.";
+        }
+
+        $orderRows = [];
+        foreach ($successfulToolResults as $row) {
+            $result = is_array($row['result'] ?? null) ? $row['result'] : [];
+            if (($result['type'] ?? null) === 'order_detail' && is_array($result['order'] ?? null)) {
+                $orderRows[] = $result['order'];
+            }
+            if (($result['type'] ?? null) === 'orders_table' && is_array($result['orders'] ?? null)) {
+                foreach ($result['orders'] as $order) {
+                    if (is_array($order)) {
+                        $orderRows[] = $order;
+                    }
+                }
+            }
+        }
+
+        if ($orderRows !== [] && $this->contentClaimsOrderNotFound($lower)) {
+            $first = $orderRows[0];
+            $orderNo = (string) ($first['order_no'] ?? $first['id'] ?? 'N/A');
+            $status = (string) ($first['status'] ?? 'N/A');
+            $count = count($orderRows);
+
+            return "I found {$count} matching order(s). Example: {$orderNo} (status: {$status}).";
+        }
+
+        return null;
+    }
+
+    private function contentDeniesProductTool(string $lowerContent): bool
+    {
+        return str_contains($lowerContent, "don't have a direct product")
+            || str_contains($lowerContent, 'do not have a direct product')
+            || str_contains($lowerContent, 'tool is unavailable')
+            || str_contains($lowerContent, 'unknown tool: list_product_records');
+    }
+
+    private function contentClaimsOrderNotFound(string $lowerContent): bool
+    {
+        return str_contains($lowerContent, 'not found')
+            || str_contains($lowerContent, 'empty result')
+            || str_contains($lowerContent, 'returned an empty result');
+    }
+
+    private function latestUserPrompt(array $messages): string
+    {
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $message = $messages[$i];
+            if ((string) ($message['role'] ?? '') !== 'user') {
+                continue;
+            }
+
+            $content = trim((string) ($message['content'] ?? ''));
+            if ($content !== '') {
+                return $content;
+            }
+        }
+
+        return '';
+    }
+
+    private function inferRequestDomain(string $prompt): ?string
+    {
+        $lower = Str::lower($prompt);
+        if ($lower === '') {
+            return null;
+        }
+
+        if (
+            str_contains($lower, 'whatsapp')
+            || str_contains($lower, 'whats app')
+            || str_contains($lower, 'wa message')
+            || str_contains($lower, 'whatsapp message')
+        ) {
+            return 'whatsapp';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     */
+    private function domainMismatchError(string $toolName, array $args): ?string
+    {
+        if ($this->requestDomain !== 'whatsapp') {
+            return null;
+        }
+
+        $normalizedTool = Str::lower($toolName);
+        $blockedForWhatsapp = [
+            'list_orders',
+            'get_order',
+            'create_order',
+            'edit_order',
+            'financial_report',
+            'create_report_task',
+            'get_report_task_status',
+            'list_sheet_records',
+            'get_sheet_record',
+        ];
+
+        if (in_array($normalizedTool, $blockedForWhatsapp, true) || str_contains($normalizedTool, 'sheet')) {
+            return 'Blocked domain-mismatched tool for WhatsApp request. Use whatsapp model/table tools instead.';
+        }
+
+        if ($normalizedTool === 'model_schema_workspace') {
+            $action = Str::lower((string) ($args['action'] ?? ''));
+            $model = Str::lower((string) ($args['model'] ?? ''));
+            $table = Str::lower((string) ($args['table'] ?? ''));
+
+            if (in_array($action, ['describe_model', 'scaffold_tools'], true)) {
+                $mentionsWhatsapp = str_contains($model, 'whatsapp') || str_contains($table, 'whatsapp');
+                if (($model !== '' || $table !== '') && ! $mentionsWhatsapp) {
+                    return 'Blocked model_schema_workspace call outside WhatsApp domain. Use model=Whatsapp or table=whatsapp.';
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, string> $executedToolNames
+     */
+    private function shouldUseProductInventoryFallback(string $latestUserPrompt, array $executedToolNames): bool
+    {
+        if ($latestUserPrompt === '') {
+            return false;
+        }
+
+        $isInventoryIntent = preg_match('/\b(product|products|stock|inventory|quantity|quantities)\b/i', $latestUserPrompt) === 1;
+        if (! $isInventoryIntent) {
+            return false;
+        }
+
+        return ! collect($executedToolNames)->contains(fn (string $tool): bool => in_array($tool, [
+            'list_product_records',
+            'get_product_record',
+        ], true));
+    }
+
+    /**
+     * @param array<int, array{tool: string, type: mixed, ok: mixed, message?: mixed}> $toolOutcomeSummary
+     * @param array<int, string> $executedToolNames
+     */
+    private function runProductInventoryFallback(callable $emit, array &$toolOutcomeSummary, array &$executedToolNames): ?string
+    {
+        $toolName = 'list_product_records';
+        $toolArgs = ['page' => 1, 'per_page' => 100];
+
+        $emit('tool_call', ['tool' => $toolName, 'args' => $toolArgs]);
+        $result = $this->orchestrator->execute(
+            $toolName,
+            $toolArgs,
+            fn (string $name, array $args): array => $this->dispatchTool($name, $args),
+        );
+
+        $critique = $this->critic->evaluate($toolName, $result);
+        $result['_critic'] = $critique;
+
+        $emit('tool_result', [
+            'tool' => $toolName,
+            'result' => $result,
+        ]);
+
+        $executedToolNames[] = $toolName;
+        $toolOutcomeSummary[] = [
+            'tool' => $toolName,
+            'type' => $result['type'] ?? null,
+            'ok' => $critique['ok'],
+            'message' => $result['message'] ?? null,
+        ];
+
+        if (($result['type'] ?? null) === 'list_product_records') {
+            $rows = is_array($result['rows'] ?? null) ? $result['rows'] : [];
+            $productCount = (int) ($result['total'] ?? count($rows));
+            $totalStock = collect($rows)
+                ->sum(fn ($row): float => (float) (is_array($row) ? ($row['quantity'] ?? 0) : 0));
+
+            return "I found {$productCount} products. Combined stock in the listed results is {$totalStock}.";
+        }
+
+        $message = trim((string) ($result['message'] ?? ''));
+        if ($message === '' && is_array($result['last_error'] ?? null)) {
+            $message = trim((string) ($result['last_error']['message'] ?? ''));
+        }
+
+        if (str_contains($message, 'SQLSTATE[HY000] [2002]')) {
+            return 'I could not fetch product stock because the database is currently unreachable (MySQL connection failed).';
+        }
+
+        if ($message !== '') {
+            return "I could not fetch product stock: {$message}";
+        }
+
+        return null;
     }
 
     // ── Tool dispatcher ──────────────────────────────────────────────────────
@@ -484,6 +1069,7 @@ class OllamaToolRunner
             'create_order' => $this->createOrder($args),
             'edit_order'   => $this->editOrder($args),
             'scaffold_mcp_tool' => $this->scaffoldMcpTool($args),
+            'model_schema_workspace' => $this->modelSchemaWorkspace($args),
             'financial_report' => $this->financialReport($args),
             'create_report_task' => $this->createReportTask($args),
             'get_report_task_status' => $this->getReportTaskStatus($args),
@@ -492,7 +1078,7 @@ class OllamaToolRunner
             'create_task' => $this->createTask($args),
             'send_email' => $this->sendEmail($args),
             'send_grid_email' => $this->sendEmail($args),
-            default        => ['type' => 'error', 'message' => "Unknown tool: {$name}"],
+            default        => $this->invokeDynamicTool($name, $args),
         };
     }
 
@@ -501,7 +1087,188 @@ class OllamaToolRunner
      */
     public function callTool(string $name, array $args = []): array
     {
-        return $this->dispatchTool($name, $args);
+        $policy = $this->policy->authorize($name, $args);
+        if (! $policy['allowed']) {
+            $result = [
+                'type' => 'policy_blocked',
+                'tool' => $name,
+                'risk' => $policy['risk'],
+                'message' => $policy['reason'],
+            ];
+        } else {
+            $result = $this->orchestrator->execute(
+                $name,
+                $args,
+                fn (string $toolName, array $toolArgs): array => $this->dispatchTool($toolName, $toolArgs),
+            );
+        }
+
+        $result['_policy'] = [
+            'risk' => $policy['risk'],
+            'requires_confirmation' => $policy['requires_confirmation'],
+        ];
+        $result['_critic'] = $this->critic->evaluate($name, $result);
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     */
+    private function invokeDynamicTool(string $name, array $args): array
+    {
+        $normalized = strtolower(str_replace(['_', '-'], '', $name));
+        $toolClass = $this->mcpToolMap[$name]
+            ?? $this->mcpToolMap[strtolower($name)]
+            ?? $this->mcpToolMap[$normalized]
+            ?? null;
+
+        if (! is_string($toolClass) || $toolClass === '') {
+            // Registry may be stale after scaffold/overwrite; refresh once and retry lookup.
+            $this->refreshDynamicToolRegistry();
+            $toolClass = $this->mcpToolMap[$name]
+                ?? $this->mcpToolMap[strtolower($name)]
+                ?? $this->mcpToolMap[$normalized]
+                ?? null;
+        }
+
+        if (! is_string($toolClass) || $toolClass === '') {
+            $toolClass = $this->resolveToolClassFromName($name);
+        }
+
+        if (is_string($toolClass) && $toolClass !== '') {
+            $this->ensureSkillFileForToolClass($toolClass, "Use when tasks require {$name}.");
+            return $this->mcpInvoker->invoke($toolClass, $args);
+        }
+
+        return ['type' => 'error', 'message' => "Unknown tool: {$name}"];
+    }
+
+    private function resolveToolClassFromName(string $name): ?string
+    {
+        $base = trim($name);
+        if ($base === '') {
+            return null;
+        }
+
+        $candidates = [
+            'App\\Mcp\\Tools\\'.Str::studly(str_replace('-', '_', $base)).'Tool',
+            'App\\Mcp\\Tools\\'.Str::studly(str_replace(['-', '_'], ' ', $base)).'Tool',
+            'App\\Mcp\\Tools\\'.Str::studly($base).'Tool',
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (class_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    private function modelSchemaWorkspace(array $args): array
+    {
+        return $this->mcpInvoker->invoke(ModelSchemaWorkspaceTool::class, $args);
+    }
+
+    private function refreshDynamicToolRegistry(): void
+    {
+        if (! $this->dynamicToolsEnabled) {
+            return;
+        }
+
+        try {
+            $registry = app(DynamicToolRegistryService::class)->build($this->tools);
+            $this->tools = is_array($registry['tools'] ?? null) ? $registry['tools'] : $this->tools;
+            $this->mcpToolMap = is_array($registry['mcp_map'] ?? null) ? $registry['mcp_map'] : [];
+        } catch (\Throwable $e) {
+            Log::warning('Failed to build dynamic tool registry; falling back to static tools.', [
+                'trace_id' => $this->traceId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * @return array{path: string, created: bool}
+     */
+    private function ensureSkillFileForToolClass(string $className, string $description): array
+    {
+        $toolBase = class_basename($className);
+        $skillBase = Str::kebab(preg_replace('/Tool$/', '', $toolBase) ?? $toolBase);
+        $skillsRoot = (string) config('services.ollama.skills_path', resource_path('ai/skills'));
+        $skillDir = rtrim($skillsRoot, '/').'/'.$skillBase;
+        $skillPath = $skillDir.'/SKILL.md';
+
+        if (File::exists($skillPath)) {
+            return ['path' => $skillPath, 'created' => false];
+        }
+
+        File::ensureDirectoryExists($skillDir);
+
+        $toolFunction = Str::snake(preg_replace('/Tool$/', '', $toolBase) ?? $toolBase);
+        $skillDescription = trim($description) !== '' ? trim($description) : "Use when tasks require {$toolFunction}.";
+        $triggers = implode(', ', [$skillBase, str_replace('-', ' ', $skillBase), $toolFunction]);
+        $content = <<<MD
+---
+name: {$skillBase}
+description: {$skillDescription}
+triggers: {$triggers}
+---
+
+# {$toolBase} Skill
+
+Use this skill when the task maps to the `{$toolFunction}` tool.
+
+## Workflow
+- Prefer one focused tool call over repeated broad calls.
+- Use only parameters required to satisfy the request.
+- Do not claim success unless tool output confirms success.
+
+## Output
+- Return exact values from tool results.
+- Include any constraints or filters used.
+MD;
+
+        File::put($skillPath, $content);
+
+        return ['path' => $skillPath, 'created' => true];
+    }
+
+    /**
+     * @param array<string, mixed> $plan
+     */
+    private function renderPlanDirective(array $plan): string
+    {
+        $goal = trim((string) ($plan['goal'] ?? ''));
+        $steps = is_array($plan['steps'] ?? null) ? $plan['steps'] : [];
+        $lines = ['Execution Plan:'];
+
+        if ($goal !== '') {
+            $lines[] = 'Goal: '.$goal;
+        }
+
+        foreach ($steps as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $index = (int) ($step['step'] ?? 0);
+            $action = trim((string) ($step['action'] ?? ''));
+            $tool = trim((string) ($step['tool'] ?? ''));
+            $risk = trim((string) ($step['risk'] ?? 'medium'));
+
+            $label = $index > 0 ? (string) $index : '-';
+            $summary = $action !== '' ? $action : 'Execute planned step';
+            $toolPart = $tool !== '' ? " (tool: {$tool})" : '';
+            $lines[] = "{$label}. {$summary}{$toolPart} [risk: {$risk}]";
+        }
+
+        return implode("\n", $lines);
     }
 
     // ── Tool implementations ─────────────────────────────────────────────────
@@ -618,7 +1385,8 @@ class OllamaToolRunner
         }
 
         try {
-            $order = SheetOrder::create($args);
+            $payload = Arr::except($args, ['confirmed']);
+            $order = SheetOrder::create($payload);
         } catch (\Throwable $e) {
             return ['type' => 'error', 'message' => 'DB error: ' . $e->getMessage()];
         }
@@ -646,7 +1414,7 @@ class OllamaToolRunner
 
         try {
             $order->update(
-                collect($args)->except(['id', 'order_no'])->toArray()
+                collect($args)->except(['id', 'order_no', 'confirmed'])->toArray()
             );
         } catch (\Throwable $e) {
             return ['type' => 'error', 'message' => 'DB error: ' . $e->getMessage()];
@@ -709,6 +1477,54 @@ class OllamaToolRunner
         ];
     }
 
+    /**
+     * Keep tool feedback compact and JSON-safe before feeding it back into the model context.
+     *
+     * @param array<string, mixed> $result
+     */
+    private function compactToolResultForModel(array $result): string
+    {
+        $summary = [
+            'type' => $result['type'] ?? 'unknown',
+            'message' => $result['message'] ?? null,
+            'tool' => $result['tool'] ?? null,
+            'table' => $result['table'] ?? null,
+            'total' => $result['total'] ?? null,
+            'current_page' => $result['current_page'] ?? null,
+            'last_page' => $result['last_page'] ?? null,
+            'rows_count' => is_array($result['rows'] ?? null) ? count($result['rows']) : null,
+            'orders_count' => is_array($result['orders'] ?? null) ? count($result['orders']) : null,
+            'available_tool_functions' => is_array($result['available_tool_functions'] ?? null)
+                ? array_values(array_slice($result['available_tool_functions'], 0, 12))
+                : null,
+            'created_count' => is_array($result['created'] ?? null) ? count($result['created']) : null,
+            'skipped_count' => is_array($result['skipped'] ?? null) ? count($result['skipped']) : null,
+            'last_error' => is_array($result['last_error'] ?? null)
+                ? [
+                    'type' => $result['last_error']['type'] ?? null,
+                    'message' => $result['last_error']['message'] ?? null,
+                ]
+                : null,
+            'details' => $result['details'] ?? null,
+            'upstream_status' => $result['upstream_status'] ?? null,
+        ];
+
+        $encoded = json_encode(
+            array_filter($summary, static fn ($value) => $value !== null),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR
+        );
+
+        if (! is_string($encoded) || $encoded === '') {
+            $encoded = '{"type":"error","message":"Unable to encode tool result summary."}';
+        }
+
+        if (strlen($encoded) > 6000) {
+            $encoded = substr($encoded, 0, 6000).'...';
+        }
+
+        return $encoded;
+    }
+
     private function scaffoldMcpTool(array $args): array
     {
         $validator = Validator::make($args, [
@@ -761,6 +1577,10 @@ class OllamaToolRunner
 
         File::ensureDirectoryExists(dirname($filePath));
         File::put($filePath, $fileContents);
+        $skill = $this->ensureSkillFileForToolClass(
+            className: "App\\Mcp\\Tools\\{$className}",
+            description: $description,
+        );
 
         $registered = false;
         $registerInOrdersServer = (bool) ($args['register_in_orders_server'] ?? true);
@@ -774,6 +1594,8 @@ class OllamaToolRunner
             'class' => "App\\Mcp\\Tools\\{$className}",
             'path' => $filePath,
             'registered_in_orders_server' => $registered,
+            'skill_path' => $skill['path'],
+            'skill_created' => $skill['created'],
         ];
     }
 
@@ -865,7 +1687,7 @@ class OllamaToolRunner
 
 namespace App\Mcp\Tools;
 
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -922,7 +1744,7 @@ PHP;
 
 namespace App\Mcp\Tools;
 
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
 use Laravel\\Mcp\\Server\\Tool;
@@ -966,7 +1788,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -1050,7 +1872,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -1119,7 +1941,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -1457,7 +2279,11 @@ PHP;
         }
 
         try {
-            $task = app(ReportTaskService::class)->create($args['merchants']);
+            if ($this->userId === null) {
+                return ['type' => 'error', 'message' => 'No authenticated user was found for report task creation.'];
+            }
+
+            $task = app(ReportTaskService::class)->create($args['merchants'], $this->userId);
         } catch (\Throwable $e) {
             return ['type' => 'error', 'message' => 'Failed to create report task: '.$e->getMessage()];
         }
@@ -1480,7 +2306,7 @@ PHP;
             return ['type' => 'error', 'message' => $validator->errors()->first()];
         }
 
-        $task = app(ReportTaskService::class)->get((string) $args['task_id']);
+        $task = app(ReportTaskService::class)->get((string) $args['task_id'], $this->userId);
         if ($task === null) {
             return ['type' => 'error', 'message' => 'Task not found.'];
         }
@@ -1500,6 +2326,19 @@ PHP;
             if (is_array($decodedPlan)) {
                 $args['execution_plan'] = $decodedPlan;
             }
+        }
+        $confirmed = filter_var($args['confirmed'] ?? false, FILTER_VALIDATE_BOOL);
+        if (! $confirmed && $this->executionPlanHasHighRiskTools($args['execution_plan'] ?? [])) {
+            return [
+                'type' => 'policy_blocked',
+                'tool' => 'create_task',
+                'risk' => 'high',
+                'message' => 'Task includes high-risk tools (send_email/send_whatsapp_message). Explicit confirmation is required before scheduling. Re-run with confirmed=true.',
+            ];
+        }
+
+        if ($confirmed) {
+            $args['execution_plan'] = $this->injectHighRiskConfirmation($args['execution_plan'] ?? []);
         }
 
         $validator = Validator::make($args, [
@@ -1521,6 +2360,7 @@ PHP;
             'execution_plan.*.depends_on' => ['nullable', 'array'],
             'expected_output' => ['nullable', 'string'],
             'original_user_request' => ['nullable', 'string'],
+            'confirmed' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -1794,7 +2634,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\Services\Whatsapp\WhatsappMessageSender;
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -1809,6 +2649,7 @@ class SendWhatsappMessageTool extends Tool
         return [
             'to' => $schema->string()->description('Recipient number in international format, e.g. +2547...'),
             'message' => $schema->string()->description('Message body to send'),
+            'confirmed' => $schema->boolean()->nullable()->description('Explicit confirmation for high-risk action'),
         ];
     }
 
@@ -1819,6 +2660,7 @@ class SendWhatsappMessageTool extends Tool
         $validator = Validator::make($args, [
             'to' => ['required', 'string', 'min:8'],
             'message' => ['required', 'string', 'min:1', 'max:4096'],
+            'confirmed' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -1899,6 +2741,7 @@ PHP;
         $validator = Validator::make($args, [
             'to' => ['required', 'string', 'min:8'],
             'message' => ['required', 'string', 'min:1', 'max:4096'],
+            'confirmed' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -1946,6 +2789,7 @@ PHP;
             'content_type' => ['nullable', 'in:text/plain,text/html'],
             'from_email' => ['nullable', 'email'],
             'from_name' => ['nullable', 'string', 'max:255'],
+            'confirmed' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -2014,5 +2858,96 @@ PHP;
             'status' => $sendgridResponse->status(),
             'message_id' => is_string($messageId) && $messageId !== '' ? $messageId : null,
         ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $messages
+     */
+    private function hasExplicitConfirmationMessage(array $messages): bool
+    {
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $message = $messages[$i];
+            if ((string) ($message['role'] ?? '') !== 'user') {
+                continue;
+            }
+
+            $text = strtolower(trim((string) ($message['content'] ?? '')));
+            if ($text === '') {
+                return false;
+            }
+
+            return in_array($text, [
+                'yes',
+                'yes.',
+                'confirm',
+                'confirmed',
+                'i confirm',
+                'go ahead',
+                'proceed',
+                'do it',
+                'approve',
+                'approved',
+            ], true);
+        }
+
+        return false;
+    }
+
+    private function isHighRiskTool(string $toolName): bool
+    {
+        return in_array($this->policy->riskFor($toolName), ['high', 'critical'], true);
+    }
+
+    /**
+     * @param mixed $executionPlan
+     * @return array<int, array<string, mixed>>
+     */
+    private function injectHighRiskConfirmation(mixed $executionPlan): array
+    {
+        if (! is_array($executionPlan)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($executionPlan as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $toolName = (string) ($step['tool'] ?? '');
+            $toolInput = $step['tool_input'] ?? [];
+            if (! is_array($toolInput)) {
+                $toolInput = [];
+            }
+
+            if ($toolName !== '' && $this->isHighRiskTool($toolName) && ! array_key_exists('confirmed', $toolInput)) {
+                $toolInput['confirmed'] = true;
+            }
+
+            $step['tool_input'] = $toolInput;
+            $normalized[] = $step;
+        }
+
+        return $normalized;
+    }
+
+    private function executionPlanHasHighRiskTools(mixed $executionPlan): bool
+    {
+        if (! is_array($executionPlan)) {
+            return false;
+        }
+
+        foreach ($executionPlan as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $toolName = (string) ($step['tool'] ?? '');
+            if ($toolName !== '' && $this->isHighRiskTool($toolName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

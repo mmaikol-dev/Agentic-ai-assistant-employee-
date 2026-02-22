@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools;
 
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Mcp\Request;
@@ -30,6 +30,7 @@ class SendGridEmailTool extends Tool
             'bcc' => $schema->array()->items($schema->string()->format('email'))->nullable()->description('Optional BCC recipients.'),
             'reply_to' => $schema->string()->format('email')->nullable()->description('Optional reply-to address.'),
             'sandbox' => $schema->boolean()->nullable()->description('Optional override for SendGrid sandbox mode.'),
+            'confirmed' => $schema->boolean()->nullable()->description('Explicit confirmation for high-risk action'),
             'attachments' => $schema->array()
                 ->items($schema->object([
                     'filename' => $schema->string()->required(),
@@ -61,6 +62,7 @@ class SendGridEmailTool extends Tool
             'bcc.*' => ['required', 'email'],
             'reply_to' => ['nullable', 'email'],
             'sandbox' => ['nullable', 'boolean'],
+            'confirmed' => ['nullable', 'boolean'],
             'attachments' => ['nullable', 'array', 'max:15'],
             'attachments.*.filename' => ['required_with:attachments', 'string'],
             'attachments.*.content' => ['required_with:attachments', 'string'],

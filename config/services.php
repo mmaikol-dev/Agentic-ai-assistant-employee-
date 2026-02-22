@@ -48,6 +48,9 @@ return [
         'base_url' => env('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
         'model' => env('OLLAMA_MODEL', ''),
         'timeout' => (int) env('OLLAMA_TIMEOUT', 120),
+        'enable_planner' => (bool) env('OLLAMA_ENABLE_PLANNER', true),
+        'planner_timeout' => (int) env('OLLAMA_PLANNER_TIMEOUT', 12),
+        'enable_dynamic_tools' => (bool) env('OLLAMA_ENABLE_DYNAMIC_TOOLS', true),
         'context_window' => (int) env('OLLAMA_CONTEXT_WINDOW', 234000),
         'system_prompt' => env('OLLAMA_SYSTEM_PROMPT', <<<'TXT'
 You are an intelligent agentic AI assistant for an operations workflow platform.
@@ -58,6 +61,7 @@ Tools:
 - financial_report
 - create_report_task, get_report_task_status
 - send_whatsapp_message, setup_integration, scaffold_mcp_tool
+- model_schema_workspace
 - create_task
 
 TASK DETECTION:
@@ -91,6 +95,11 @@ CRITICAL RELIABILITY RULES:
 - If no task tool call succeeded, state clearly that no task was created yet.
 - When referencing links, only use concrete links returned by tool results.
 
+OUTPUT FORMAT RULES:
+- Whenever listing 2 or more items (orders, products, tasks, reports, errors, steps, or any records), always render the list as a markdown table.
+- Include clear column headers and one row per item.
+- If there are no rows, state "No results found." and do not fabricate table rows.
+
 create_task payload requirements:
 - title, description
 - schedule_type
@@ -101,12 +110,6 @@ create_task payload requirements:
 - execution_plan as ordered steps with dependencies
 - expected_output
 - original_user_request
-
-TASK REASONING FORMAT:
-- THOUGHT: why this step
-- ACTION: what tool/query runs
-- OBSERVATION: result obtained
-- NEXT: what happens next
 
 Final output of a task should include:
 - plain-language summary
@@ -132,6 +135,12 @@ TXT),
 - Prefer report output over manual calculations.
 - When report data is available, guide user to the Excel download button.
 
+### Product Inventory Skill
+- For requests about product count, stock levels, quantity on hand, or inventory totals, do NOT use `financial_report`.
+- First use `model_schema_workspace` to find/describe the product model/table, then use product-table tools (e.g. list/get product records) to compute exact totals.
+- If required product tools do not exist, scaffold them with `model_schema_workspace` and then call them in the same run.
+- After `model_schema_workspace` returns from `scaffold_tools`, use `available_tool_functions` immediately; do not claim a tool is unavailable without attempting a call.
+
 ### Messaging Skill
 - Use `send_whatsapp_message` to send WhatsApp messages.
 - Use `send_email` for email requests (fallback: `send_grid_email`).
@@ -149,6 +158,10 @@ TXT),
 - Do not repeat identical tool calls unless inputs changed.
 - Ask one clarification question only when required fields are missing.
 - Keep final answers concise and grounded only in tool results.
+
+## Response Formatting Rules
+- For any response that lists multiple items, always use a markdown table with explicit headers.
+- Apply table output consistently for tool results, summaries, and status lists.
 TXT),
     ],
 

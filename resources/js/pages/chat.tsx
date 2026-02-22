@@ -51,77 +51,132 @@ type ChatRole = 'assistant' | 'user';
 type OrderRow = Record<string, unknown>;
 
 type ToolResult =
-    | { type: 'orders_table'; orders: OrderRow[]; total: number; current_page: number; last_page: number; per_page: number }
+    | {
+          type: 'orders_table';
+          orders: OrderRow[];
+          total: number;
+          current_page: number;
+          last_page: number;
+          per_page: number;
+      }
     | { type: 'order_detail'; order: OrderRow }
     | { type: 'order_created'; message: string; order: OrderRow }
     | { type: 'order_updated'; message: string; order: OrderRow }
     | {
-        type: 'financial_report';
-        merchant?: string | null;
-        status: string;
-        total_orders: number;
-        total_revenue: number;
-        average_order_value: number;
-        date_range?: { earliest_order_date?: string | null; latest_order_date?: string | null };
-        product_breakdown?: Array<{ product_name: string; order_count: number; total_revenue: number; average_price: number }>;
-        city_breakdown?: Array<{ city: string; order_count: number }>;
-        listed_orders_count?: number;
-        orders?: OrderRow[];
-        excel_download_url?: string;
-    }
+          type: 'financial_report';
+          merchant?: string | null;
+          status: string;
+          total_orders: number;
+          total_revenue: number;
+          average_order_value: number;
+          date_range?: {
+              earliest_order_date?: string | null;
+              latest_order_date?: string | null;
+          };
+          product_breakdown?: Array<{
+              product_name: string;
+              order_count: number;
+              total_revenue: number;
+              average_price: number;
+          }>;
+          city_breakdown?: Array<{ city: string; order_count: number }>;
+          listed_orders_count?: number;
+          orders?: OrderRow[];
+          excel_download_url?: string;
+      }
     | {
-        type: 'integration_requirements';
-        integration_name: string;
-        message: string;
-        provider_options?: string[];
-        questions?: string[];
-        required_inputs?: string[];
-    }
+          type: 'integration_requirements';
+          integration_name: string;
+          message: string;
+          provider_options?: string[];
+          questions?: string[];
+          required_inputs?: string[];
+      }
     | {
-        type: 'integration_setup';
-        integration_name: string;
-        provider: string;
-        message: string;
-        files_created?: string[];
-        required_env_keys?: string[];
-        missing_env_keys?: string[];
-        next_step?: string;
-    }
-    | { type: 'whatsapp_message_sent'; to: string; provider?: string; result?: Record<string, unknown> }
+          type: 'integration_setup';
+          integration_name: string;
+          provider: string;
+          message: string;
+          files_created?: string[];
+          required_env_keys?: string[];
+          missing_env_keys?: string[];
+          next_step?: string;
+      }
     | {
-        type: 'task_created';
-        id: string;
-        title: string;
-        status: string;
-        schedule_type: string;
-        task_url?: string;
-        message?: string;
-    }
+          type: 'whatsapp_message_sent';
+          to: string;
+          provider?: string;
+          result?: Record<string, unknown>;
+      }
     | {
-        type: 'task_workflow' | 'report_delivery_workflow';
-        id: string;
-        status: string;
-        current_step: string;
-        confirmation_required: boolean;
-        message: string;
-        summary?: { merchants_count?: number; total_matched_orders?: number };
-        merchants?: Array<{
-            merchant: string;
-            start_date?: string | null;
-            end_date?: string | null;
-            matched_count?: number;
-            matched_orders?: Array<{
-                id: number;
-                order_no: string;
-                code: string;
-                status?: string;
-                order_date?: string | null;
-            }>;
-        }>;
-        report_links?: Array<{ merchant: string; url: string }>;
-        confirm_url?: string;
-        task_url?: string;
-    }
+          type: 'task_created';
+          id: string;
+          title: string;
+          status: string;
+          schedule_type: string;
+          task_url?: string;
+          message?: string;
+      }
+    | {
+          type: 'task_workflow' | 'report_delivery_workflow';
+          id: string;
+          status: string;
+          current_step: string;
+          confirmation_required: boolean;
+          message: string;
+          summary?: { merchants_count?: number; total_matched_orders?: number };
+          merchants?: Array<{
+              merchant: string;
+              start_date?: string | null;
+              end_date?: string | null;
+              matched_count?: number;
+              matched_orders?: Array<{
+                  id: number;
+                  order_no: string;
+                  code: string;
+                  status?: string;
+                  order_date?: string | null;
+              }>;
+          }>;
+          report_links?: Array<{ merchant: string; url: string }>;
+          confirm_url?: string;
+          task_url?: string;
+      }
+    | {
+          type: 'list_product_records';
+          table?: string;
+          total: number;
+          current_page: number;
+          last_page: number;
+          per_page: number;
+          rows: OrderRow[];
+      }
+    | {
+          type: 'get_product_record';
+          table?: string;
+          record: OrderRow;
+      }
+    | {
+          type: 'model_workspace';
+          action?: string;
+          model?: string | null;
+          table?: string | null;
+          count?: number;
+          column_count?: number;
+          columns?: string[];
+          available_tool_functions?: string[];
+          created?: Array<Record<string, unknown>>;
+          skipped?: Array<Record<string, unknown>>;
+      }
+    | {
+          type: 'policy_blocked' | 'tool_scaffolded';
+          message?: string;
+          tool?: string;
+          reason?: string;
+          risk?: string;
+          details?: string;
+          upstream_status?: number;
+      }
     | { type: 'error'; message: string };
 
 type ToolCall = {
@@ -131,6 +186,21 @@ type ToolCall = {
     resultType?: string;
 };
 
+type AgentActivityItem = {
+    id: string;
+    kind:
+        | 'status'
+        | 'plan_step'
+        | 'tool_call'
+        | 'tool_result'
+        | 'critic'
+        | 'note';
+    title: string;
+    detail?: string;
+    tool?: string;
+    state?: 'running' | 'completed' | 'failed';
+};
+
 type ChatMessage = {
     id: string;
     role: ChatRole;
@@ -138,6 +208,7 @@ type ChatMessage = {
     thinking?: string;
     toolCalls?: ToolCall[];
     toolResults?: ToolResult[];
+    activity?: AgentActivityItem[];
 };
 
 type ToastType = 'info' | 'success' | 'error';
@@ -163,20 +234,30 @@ type ChatPageProps = {
     initialMessages?: ChatMessage[];
 };
 
+type AutoTableData = {
+    id: string;
+    title: string;
+    rows: OrderRow[];
+    total?: number;
+    currentPage?: number;
+    lastPage?: number;
+    perPage?: number;
+};
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'AI Chat', href: '/chat' }];
 const starterMessages: ChatMessage[] = [];
 
 const TABLE_COLS = [
-    { key: 'order_no',      label: 'Order #' },
-    { key: 'client_name',   label: 'Client' },
-    { key: 'product_name',  label: 'Product' },
-    { key: 'amount',        label: 'Amount' },
-    { key: 'quantity',      label: 'Qty' },
-    { key: 'status',        label: 'Status' },
-    { key: 'agent',         label: 'Agent' },
-    { key: 'city',          label: 'City' },
+    { key: 'order_no', label: 'Order #' },
+    { key: 'client_name', label: 'Client' },
+    { key: 'product_name', label: 'Product' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'quantity', label: 'Qty' },
+    { key: 'status', label: 'Status' },
+    { key: 'agent', label: 'Agent' },
+    { key: 'city', label: 'City' },
     { key: 'delivery_date', label: 'Delivery' },
 ];
 
@@ -203,25 +284,52 @@ const ORDER_DETAIL_PRIORITY = [
 ];
 
 const STATUS_STYLES: Record<string, string> = {
-    delivered:  'bg-emerald-100 text-emerald-700 border-emerald-200',
-    pending:    'bg-amber-100  text-amber-700  border-amber-200',
-    cancelled:  'bg-red-100    text-red-700    border-red-200',
+    delivered: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    pending: 'bg-amber-100  text-amber-700  border-amber-200',
+    cancelled: 'bg-red-100    text-red-700    border-red-200',
     processing: 'bg-blue-100   text-blue-700   border-blue-200',
-    shipped:    'bg-violet-100 text-violet-700  border-violet-200',
+    shipped: 'bg-violet-100 text-violet-700  border-violet-200',
 };
 
-const TOOL_META: Record<string, { label: string; icon: ReactNode; color: string }> = {
-    list_orders:  { label: 'Querying orders',  icon: <Table2 className="h-3 w-3" />,       color: 'text-blue-600 bg-blue-50 border-blue-200' },
-    get_order:    { label: 'Fetching order',   icon: <Package className="h-3 w-3" />,       color: 'text-violet-600 bg-violet-50 border-violet-200' },
-    create_order: { label: 'Creating order',   icon: <PackagePlus className="h-3 w-3" />,   color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-    edit_order:   { label: 'Updating order',   icon: <PackageCheck className="h-3 w-3" />,  color: 'text-orange-600 bg-orange-50 border-orange-200' },
-    create_task:  { label: 'Scheduling task',  icon: <Gauge className="h-3 w-3" />,         color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200' },
+const TOOL_META: Record<
+    string,
+    { label: string; icon: ReactNode; color: string }
+> = {
+    list_orders: {
+        label: 'Querying orders',
+        icon: <Table2 className="h-3 w-3" />,
+        color: 'text-blue-600 bg-blue-50 border-blue-200',
+    },
+    get_order: {
+        label: 'Fetching order',
+        icon: <Package className="h-3 w-3" />,
+        color: 'text-violet-600 bg-violet-50 border-violet-200',
+    },
+    create_order: {
+        label: 'Creating order',
+        icon: <PackagePlus className="h-3 w-3" />,
+        color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+    },
+    edit_order: {
+        label: 'Updating order',
+        icon: <PackageCheck className="h-3 w-3" />,
+        color: 'text-orange-600 bg-orange-50 border-orange-200',
+    },
+    create_task: {
+        label: 'Scheduling task',
+        icon: <Gauge className="h-3 w-3" />,
+        color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200',
+    },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getCsrfToken(): string {
-    return document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content?.trim() ?? '';
+    return (
+        document
+            .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+            ?.content?.trim() ?? ''
+    );
 }
 
 function getXsrfTokenFromCookie(): string {
@@ -243,39 +351,72 @@ function getXsrfTokenFromCookie(): string {
 function formatValue(key: string, value: unknown): string {
     if (value == null || value === '') return '—';
     if (key.includes('date') && typeof value === 'string') {
-        try { return new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
-        catch { return String(value); }
+        try {
+            return new Date(value).toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+            });
+        } catch {
+            return String(value);
+        }
     }
     if (key === 'amount' && typeof value === 'number') {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+        }).format(value);
     }
     return String(value);
 }
 
-function splitTerminalThinking(answerText: string, thinkingText: string): { answer: string; thinking: string } {
+function splitTerminalThinking(
+    answerText: string,
+    thinkingText: string,
+): { answer: string; thinking: string } {
     const startMarker = 'Thinking...';
     const endMarker = '...done thinking.';
-    if (!answerText.startsWith(startMarker)) return { answer: answerText, thinking: thinkingText };
+    if (!answerText.startsWith(startMarker))
+        return { answer: answerText, thinking: thinkingText };
     const afterStart = answerText.slice(startMarker.length);
     const endIndex = afterStart.indexOf(endMarker);
-    if (endIndex === -1) return { answer: '', thinking: `${thinkingText}${afterStart}`.trim() };
+    if (endIndex === -1)
+        return { answer: '', thinking: `${thinkingText}${afterStart}`.trim() };
     return {
         answer: afterStart.slice(endIndex + endMarker.length).trim(),
-        thinking: `${thinkingText}\n${afterStart.slice(0, endIndex).trim()}`.trim(),
+        thinking:
+            `${thinkingText}\n${afterStart.slice(0, endIndex).trim()}`.trim(),
     };
 }
 
-function splitHeuristicThinking(answerText: string, thinkingText: string): { answer: string; thinking: string } {
+function splitHeuristicThinking(
+    answerText: string,
+    thinkingText: string,
+): { answer: string; thinking: string } {
     const trimmed = answerText.trimStart();
     const looksLikeReasoning =
-        /^thinking\b/i.test(trimmed) || /^thinking process\b/i.test(trimmed) ||
-        /^reasoning\b/i.test(trimmed) || /^analysis\b/i.test(trimmed);
-    if (!looksLikeReasoning) return { answer: answerText, thinking: thinkingText };
-    const match = /\b(Final\s+(Answer|Response|Output|Decision)|Answer:|Response:)\b/i.exec(answerText);
-    if (!match || match.index === undefined) return { answer: '', thinking: `${thinkingText}\n${answerText}`.trim() };
+        /^thinking\b/i.test(trimmed) ||
+        /^thinking process\b/i.test(trimmed) ||
+        /^reasoning\b/i.test(trimmed) ||
+        /^analysis\b/i.test(trimmed);
+    if (!looksLikeReasoning)
+        return { answer: answerText, thinking: thinkingText };
+    const match =
+        /\b(Final\s+(Answer|Response|Output|Decision)|Answer:|Response:)\b/i.exec(
+            answerText,
+        );
+    if (!match || match.index === undefined)
+        return {
+            answer: '',
+            thinking: `${thinkingText}\n${answerText}`.trim(),
+        };
     return {
-        answer: answerText.slice(match.index + match[0].length).trim().replace(/^[:\-\s]+/, ''),
-        thinking: `${thinkingText}\n${answerText.slice(0, match.index).trim()}`.trim(),
+        answer: answerText
+            .slice(match.index + match[0].length)
+            .trim()
+            .replace(/^[:\-\s]+/, ''),
+        thinking:
+            `${thinkingText}\n${answerText.slice(0, match.index).trim()}`.trim(),
     };
 }
 
@@ -288,28 +429,124 @@ function isTaskPayload(value: unknown): value is TaskPayload {
     return (
         typeof data.title === 'string' &&
         typeof data.schedule_type === 'string' &&
-        ['immediate', 'one_time', 'recurring', 'event_triggered'].includes(data.schedule_type)
+        ['immediate', 'one_time', 'recurring', 'event_triggered'].includes(
+            data.schedule_type,
+        )
     );
+}
+
+function shortJson(value: unknown): string {
+    try {
+        const rendered = JSON.stringify(value);
+        if (!rendered) return '';
+        return rendered.length > 220
+            ? `${rendered.slice(0, 220)}...`
+            : rendered;
+    } catch {
+        return '';
+    }
+}
+
+function isRecordObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isObjectArray(value: unknown): value is OrderRow[] {
+    return (
+        Array.isArray(value) &&
+        value.length > 0 &&
+        value.every((item) => isRecordObject(item))
+    );
+}
+
+function labelFromKey(key: string): string {
+    return key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+        .trim();
+}
+
+function safeCellValue(key: string, value: unknown): string {
+    if (/(password|secret|token|recovery|api_key|auth)/i.test(key)) {
+        return '••••';
+    }
+    if (Array.isArray(value)) {
+        return value.length > 0 ? JSON.stringify(value) : '[]';
+    }
+    if (isRecordObject(value)) {
+        return JSON.stringify(value);
+    }
+
+    return formatValue(key, value);
+}
+
+function collectAutoTables(result: Record<string, unknown>): AutoTableData[] {
+    const type = String(result.type ?? 'tool_result');
+    const candidates: Array<[string, unknown]> = Object.entries(result).filter(
+        ([field]) => !field.startsWith('_') && field !== 'type',
+    );
+    const tables: AutoTableData[] = [];
+
+    for (const [field, value] of candidates) {
+        if (!isObjectArray(value)) {
+            continue;
+        }
+
+        tables.push({
+            id: `${type}:${field}`,
+            title: `${labelFromKey(type)} - ${labelFromKey(field)}`,
+            rows: value,
+            total:
+                typeof result.total === 'number'
+                    ? result.total
+                    : value.length,
+            currentPage:
+                typeof result.current_page === 'number'
+                    ? result.current_page
+                    : undefined,
+            lastPage:
+                typeof result.last_page === 'number'
+                    ? result.last_page
+                    : undefined,
+            perPage:
+                typeof result.per_page === 'number'
+                    ? result.per_page
+                    : undefined,
+        });
+    }
+
+    return tables;
 }
 
 // ── Rich text renderer ────────────────────────────────────────────────────────
 
 function renderRichText(text: string): ReactNode {
-    const renderPlainWithLinks = (value: string, keyPrefix: string): ReactNode[] => {
+    const renderPlainWithLinks = (
+        value: string,
+        keyPrefix: string,
+    ): ReactNode[] => {
         const nodes: ReactNode[] = [];
-        const linkPattern = /(https?:\/\/[^\s)]+|\/(?:tasks|reports|report-tasks|chat|dashboard)[^\s)]*)/g;
+        const linkPattern =
+            /(https?:\/\/[^\s)]+|\/(?:tasks|reports|report-tasks|chat|dashboard)[^\s)]*)/g;
         const parts = value.split(linkPattern);
 
         parts.forEach((part, index) => {
             if (!part) return;
-            if (/^https?:\/\//.test(part) || /^\/(?:tasks|reports|report-tasks|chat|dashboard)/.test(part)) {
+            if (
+                /^https?:\/\//.test(part) ||
+                /^\/(?:tasks|reports|report-tasks|chat|dashboard)/.test(part)
+            ) {
                 nodes.push(
                     <a
                         key={`${keyPrefix}-lnk-${index}`}
                         href={part}
                         className="underline underline-offset-2 hover:opacity-80"
                         target={part.startsWith('http') ? '_blank' : undefined}
-                        rel={part.startsWith('http') ? 'noreferrer noopener' : undefined}
+                        rel={
+                            part.startsWith('http')
+                                ? 'noreferrer noopener'
+                                : undefined
+                        }
                     >
                         {part}
                     </a>,
@@ -322,21 +559,50 @@ function renderRichText(text: string): ReactNode {
         return nodes;
     };
 
-    const renderInline = (inlineText: string, keyPrefix: string): ReactNode[] => {
+    const renderInline = (
+        inlineText: string,
+        keyPrefix: string,
+    ): ReactNode[] => {
         const segments: ReactNode[] = [];
         const pattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
         const parts = inlineText.split(pattern);
         parts.forEach((part, index) => {
-            if (((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) && part.length > 4) {
-                segments.push(<strong key={`${keyPrefix}-b-${index}`} className="font-semibold">{part.slice(2, -2)}</strong>);
+            if (
+                ((part.startsWith('**') && part.endsWith('**')) ||
+                    (part.startsWith('__') && part.endsWith('__'))) &&
+                part.length > 4
+            ) {
+                segments.push(
+                    <strong
+                        key={`${keyPrefix}-b-${index}`}
+                        className="font-semibold"
+                    >
+                        {part.slice(2, -2)}
+                    </strong>,
+                );
                 return;
             }
             if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
-                segments.push(<code key={`${keyPrefix}-c-${index}`} className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.85em] text-slate-900">{part.slice(1, -1)}</code>);
+                segments.push(
+                    <code
+                        key={`${keyPrefix}-c-${index}`}
+                        className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.85em] text-slate-900"
+                    >
+                        {part.slice(1, -1)}
+                    </code>,
+                );
                 return;
             }
-            if (((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_'))) && part.length > 2) {
-                segments.push(<em key={`${keyPrefix}-i-${index}`} className="italic">{part.slice(1, -1)}</em>);
+            if (
+                ((part.startsWith('*') && part.endsWith('*')) ||
+                    (part.startsWith('_') && part.endsWith('_'))) &&
+                part.length > 2
+            ) {
+                segments.push(
+                    <em key={`${keyPrefix}-i-${index}`} className="italic">
+                        {part.slice(1, -1)}
+                    </em>,
+                );
                 return;
             }
             if (part.length > 0) {
@@ -358,9 +624,18 @@ function renderRichText(text: string): ReactNode {
             const language = hasLanguage ? firstLine.trim() : '';
             const code = hasLanguage ? rest.join('\n') : block;
             return (
-                <div key={`code-${blockIndex}`} className="my-2 overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e1e]">
-                    {language && <div className="border-b border-slate-700 bg-[#252526] px-3 py-1 text-[11px] uppercase tracking-wide text-slate-300">{language}</div>}
-                    <pre className="overflow-x-auto px-3 py-2 text-sm leading-6 text-slate-100"><code className="font-mono">{code}</code></pre>
+                <div
+                    key={`code-${blockIndex}`}
+                    className="my-2 overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e1e]"
+                >
+                    {language && (
+                        <div className="border-b border-slate-700 bg-[#252526] px-3 py-1 text-[11px] tracking-wide text-slate-300 uppercase">
+                            {language}
+                        </div>
+                    )}
+                    <pre className="overflow-x-auto px-3 py-2 text-sm leading-6 text-slate-100">
+                        <code className="font-mono">{code}</code>
+                    </pre>
                 </div>
             );
         }
@@ -398,7 +673,10 @@ function renderRichText(text: string): ReactNode {
 
         const isTableSeparatorLine = (line: string): boolean => {
             const cells = rowsFromPipeLine(line);
-            return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+            return (
+                cells.length > 0 &&
+                cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+            );
         };
 
         const renderedLines: ReactNode[] = [];
@@ -407,7 +685,10 @@ function renderRichText(text: string): ReactNode {
 
             if (/^\s*---+\s*$/.test(line)) {
                 renderedLines.push(
-                    <hr key={`hr-${blockIndex}-${lineIndex}`} className="my-2 border-slate-200" />,
+                    <hr
+                        key={`hr-${blockIndex}-${lineIndex}`}
+                        className="my-2 border-slate-200"
+                    />,
                 );
                 continue;
             }
@@ -418,24 +699,36 @@ function renderRichText(text: string): ReactNode {
                 let cursor = lineIndex + 1;
                 while (cursor < lines.length) {
                     const candidate = lines[cursor] ?? '';
-                    if (candidate.trim() === '' || !candidate.includes('|')) break;
+                    if (candidate.trim() === '' || !candidate.includes('|'))
+                        break;
                     tableLines.push(candidate);
                     cursor += 1;
                 }
 
-                const hasHeaderSeparator = tableLines.length >= 2 && isTableSeparatorLine(tableLines[1]);
+                const hasHeaderSeparator =
+                    tableLines.length >= 2 &&
+                    isTableSeparatorLine(tableLines[1]);
                 if (hasHeaderSeparator) {
                     const header = rowsFromPipeLine(tableLines[0]);
                     const bodyRows = tableLines.slice(2).map(rowsFromPipeLine);
 
                     renderedLines.push(
-                        <div key={`table-${blockIndex}-${lineIndex}`} className="my-2 overflow-x-auto rounded border border-slate-200">
+                        <div
+                            key={`table-${blockIndex}-${lineIndex}`}
+                            className="my-2 overflow-x-auto rounded border border-slate-200"
+                        >
                             <table className="w-full min-w-[420px] text-left text-xs">
                                 <thead className="bg-slate-50">
                                     <tr className="border-b border-slate-200">
                                         {header.map((cell, i) => (
-                                            <th key={`th-${i}`} className="px-2.5 py-2 font-semibold text-slate-700">
-                                                {renderInline(cell, `th-${blockIndex}-${lineIndex}-${i}`)}
+                                            <th
+                                                key={`th-${i}`}
+                                                className="px-2.5 py-2 font-semibold text-slate-700"
+                                            >
+                                                {renderInline(
+                                                    cell,
+                                                    `th-${blockIndex}-${lineIndex}-${i}`,
+                                                )}
                                             </th>
                                         ))}
                                     </tr>
@@ -444,8 +737,14 @@ function renderRichText(text: string): ReactNode {
                                     {bodyRows.map((row, rowIndex) => (
                                         <tr key={`tr-${rowIndex}`}>
                                             {row.map((cell, cellIndex) => (
-                                                <td key={`td-${rowIndex}-${cellIndex}`} className="px-2.5 py-1.5 text-slate-700">
-                                                    {renderInline(cell, `td-${blockIndex}-${lineIndex}-${rowIndex}-${cellIndex}`)}
+                                                <td
+                                                    key={`td-${rowIndex}-${cellIndex}`}
+                                                    className="px-2.5 py-1.5 text-slate-700"
+                                                >
+                                                    {renderInline(
+                                                        cell,
+                                                        `td-${blockIndex}-${lineIndex}-${rowIndex}-${cellIndex}`,
+                                                    )}
                                                 </td>
                                             ))}
                                         </tr>
@@ -463,10 +762,21 @@ function renderRichText(text: string): ReactNode {
             const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line);
             if (headingMatch) {
                 const level = headingMatch[1].length;
-                const sizeClass = level === 1 ? 'text-xl font-bold' : level === 2 ? 'text-lg font-semibold' : 'text-base font-semibold';
+                const sizeClass =
+                    level === 1
+                        ? 'text-xl font-bold'
+                        : level === 2
+                          ? 'text-lg font-semibold'
+                          : 'text-base font-semibold';
                 renderedLines.push(
-                    <div key={`h-${blockIndex}-${lineIndex}`} className={`${sizeClass} whitespace-pre-wrap`}>
-                        {renderInline(headingMatch[2], `h-${blockIndex}-${lineIndex}`)}
+                    <div
+                        key={`h-${blockIndex}-${lineIndex}`}
+                        className={`${sizeClass} whitespace-pre-wrap`}
+                    >
+                        {renderInline(
+                            headingMatch[2],
+                            `h-${blockIndex}-${lineIndex}`,
+                        )}
                     </div>,
                 );
                 continue;
@@ -475,9 +785,17 @@ function renderRichText(text: string): ReactNode {
             const unorderedMatch = /^\s*[-*+]\s+(.*)$/.exec(line);
             if (unorderedMatch) {
                 renderedLines.push(
-                    <div key={`ul-${blockIndex}-${lineIndex}`} className="flex items-start gap-2 whitespace-pre-wrap">
+                    <div
+                        key={`ul-${blockIndex}-${lineIndex}`}
+                        className="flex items-start gap-2 whitespace-pre-wrap"
+                    >
                         <span className="mt-1 text-slate-500">•</span>
-                        <span>{renderInline(unorderedMatch[1], `ul-${blockIndex}-${lineIndex}`)}</span>
+                        <span>
+                            {renderInline(
+                                unorderedMatch[1],
+                                `ul-${blockIndex}-${lineIndex}`,
+                            )}
+                        </span>
                     </div>,
                 );
                 continue;
@@ -486,17 +804,34 @@ function renderRichText(text: string): ReactNode {
             const orderedMatch = /^\s*(\d+)\.\s+(.*)$/.exec(line);
             if (orderedMatch) {
                 renderedLines.push(
-                    <div key={`ol-${blockIndex}-${lineIndex}`} className="flex items-start gap-2 whitespace-pre-wrap">
-                        <span className="mt-0.5 text-slate-500">{orderedMatch[1]}.</span>
-                        <span>{renderInline(orderedMatch[2], `ol-${blockIndex}-${lineIndex}`)}</span>
+                    <div
+                        key={`ol-${blockIndex}-${lineIndex}`}
+                        className="flex items-start gap-2 whitespace-pre-wrap"
+                    >
+                        <span className="mt-0.5 text-slate-500">
+                            {orderedMatch[1]}.
+                        </span>
+                        <span>
+                            {renderInline(
+                                orderedMatch[2],
+                                `ol-${blockIndex}-${lineIndex}`,
+                            )}
+                        </span>
                     </div>,
                 );
                 continue;
             }
 
             renderedLines.push(
-                <div key={`line-${blockIndex}-${lineIndex}`} className="whitespace-pre-wrap">
-                    {line.length > 0 ? renderInline(line, `line-${blockIndex}-${lineIndex}`) : <span>&nbsp;</span>}
+                <div
+                    key={`line-${blockIndex}-${lineIndex}`}
+                    className="whitespace-pre-wrap"
+                >
+                    {line.length > 0 ? (
+                        renderInline(line, `line-${blockIndex}-${lineIndex}`)
+                    ) : (
+                        <span>&nbsp;</span>
+                    )}
                 </div>,
             );
         }
@@ -512,16 +847,72 @@ function renderRichText(text: string): ReactNode {
 // ── Tool call indicator ───────────────────────────────────────────────────────
 
 function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
-    const meta = TOOL_META[toolCall.tool] ?? { label: toolCall.tool, icon: <Wrench className="h-3 w-3" />, color: 'text-slate-600 bg-slate-50 border-slate-200' };
+    const meta = TOOL_META[toolCall.tool] ?? {
+        label: toolCall.tool,
+        icon: <Wrench className="h-3 w-3" />,
+        color: 'text-slate-600 bg-slate-50 border-slate-200',
+    };
     const isRunning = (toolCall.status ?? 'running') === 'running';
     const isFailed = toolCall.status === 'failed';
     return (
-        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${meta.color}`}>
+        <div
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${meta.color}`}
+        >
             {meta.icon}
             <span>{meta.label}</span>
-            {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin opacity-60" />}
-            {!isRunning && !isFailed && <CheckCircle2 className="h-2.5 w-2.5 opacity-70" />}
+            {isRunning && (
+                <Loader2 className="h-2.5 w-2.5 animate-spin opacity-60" />
+            )}
+            {!isRunning && !isFailed && (
+                <CheckCircle2 className="h-2.5 w-2.5 opacity-70" />
+            )}
             {isFailed && <AlertCircle className="h-2.5 w-2.5 opacity-70" />}
+        </div>
+    );
+}
+
+function AgentActivityTimeline({ items }: { items: AgentActivityItem[] }) {
+    if (items.length === 0) return null;
+
+    return (
+        <div className="space-y-2">
+            {items.map((item) => {
+                const isRunning = item.state === 'running';
+                const isFailed = item.state === 'failed';
+                const badgeClass = isFailed
+                    ? 'border-red-200 bg-red-50 text-red-700'
+                    : isRunning
+                      ? 'border-blue-200 bg-blue-50 text-blue-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+                return (
+                    <div key={item.id} className="flex gap-2">
+                        <div className="mt-1 flex flex-col items-center">
+                            <span
+                                className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${badgeClass}`}
+                            >
+                                {isRunning ? (
+                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                ) : isFailed ? (
+                                    <AlertCircle className="h-2.5 w-2.5" />
+                                ) : (
+                                    <CheckCircle2 className="h-2.5 w-2.5" />
+                                )}
+                            </span>
+                            <span className="mt-1 h-full min-h-2 w-px bg-slate-200" />
+                        </div>
+                        <div className="min-w-0 flex-1 pb-2">
+                            <p className="text-xs font-medium text-slate-800">
+                                {item.title}
+                            </p>
+                            {item.detail && (
+                                <p className="mt-0.5 text-[11px] whitespace-pre-wrap text-slate-600">
+                                    {item.detail}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -530,9 +921,13 @@ function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
 
 function StatusBadge({ status }: { status: string }) {
     const normalized = (status ?? '').toLowerCase();
-    const style = STATUS_STYLES[normalized] ?? 'bg-slate-100 text-slate-600 border-slate-200';
+    const style =
+        STATUS_STYLES[normalized] ??
+        'bg-slate-100 text-slate-600 border-slate-200';
     return (
-        <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${style}`}>
+        <span
+            className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${style}`}
+        >
             {status || '—'}
         </span>
     );
@@ -561,7 +956,8 @@ function OrdersTable({
         <div className="space-y-2">
             <div className="flex items-center justify-between px-0.5">
                 <p className="text-xs font-medium text-slate-500">
-                    {result.total.toLocaleString()} order{result.total !== 1 ? 's' : ''} found
+                    {result.total.toLocaleString()} order
+                    {result.total !== 1 ? 's' : ''} found
                 </p>
                 {result.last_page > 1 && (
                     <p className="text-xs text-slate-400">
@@ -577,12 +973,12 @@ function OrdersTable({
                             {TABLE_COLS.map((col) => (
                                 <th
                                     key={col.key}
-                                    className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600"
+                                    className="px-3 py-2.5 font-semibold whitespace-nowrap text-slate-600"
                                 >
                                     {col.label}
                                 </th>
                             ))}
-                            <th className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
+                            <th className="px-3 py-2.5 font-semibold whitespace-nowrap text-slate-600">
                                 View
                             </th>
                         </tr>
@@ -590,23 +986,35 @@ function OrdersTable({
                     <tbody className="divide-y divide-slate-100 bg-white">
                         {result.orders.map((order, i) => (
                             <tr
-                                key={String(order['id'] ?? order['order_no'] ?? i)}
+                                key={String(
+                                    order['id'] ?? order['order_no'] ?? i,
+                                )}
                                 className="transition-colors hover:bg-slate-50/80"
                             >
                                 {TABLE_COLS.map((col) => (
-                                    <td key={col.key} className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                    <td
+                                        key={col.key}
+                                        className="px-3 py-2 whitespace-nowrap text-slate-700"
+                                    >
                                         {col.key === 'status' ? (
-                                            <StatusBadge status={String(order[col.key] ?? '')} />
+                                            <StatusBadge
+                                                status={String(
+                                                    order[col.key] ?? '',
+                                                )}
+                                            />
                                         ) : col.key === 'amount' ? (
                                             <span className="font-medium tabular-nums">
-                                                {formatValue(col.key, order[col.key])}
+                                                {formatValue(
+                                                    col.key,
+                                                    order[col.key],
+                                                )}
                                             </span>
                                         ) : (
                                             formatValue(col.key, order[col.key])
                                         )}
                                     </td>
                                 ))}
-                                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                <td className="px-3 py-2 whitespace-nowrap text-slate-700">
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -634,24 +1042,29 @@ function OrdersTable({
                     </button>
 
                     <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(result.last_page, 7) }, (_, i) => {
-                            const page = i + 1;
-                            const isCurrent = page === result.current_page;
-                            return (
-                                <button
-                                    key={page}
-                                    onClick={() => onPageChange?.(page)}
-                                    className={`h-6 min-w-[24px] rounded px-1.5 text-xs font-medium transition ${
-                                        isCurrent
-                                            ? 'bg-slate-800 text-white'
-                                            : 'text-slate-500 hover:bg-slate-100'
-                                    }`}
-                                >
-                                    {page}
-                                </button>
-                            );
-                        })}
-                        {result.last_page > 7 && <span className="px-1 text-slate-400">…</span>}
+                        {Array.from(
+                            { length: Math.min(result.last_page, 7) },
+                            (_, i) => {
+                                const page = i + 1;
+                                const isCurrent = page === result.current_page;
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => onPageChange?.(page)}
+                                        className={`h-6 min-w-[24px] rounded px-1.5 text-xs font-medium transition ${
+                                            isCurrent
+                                                ? 'bg-slate-800 text-white'
+                                                : 'text-slate-500 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            },
+                        )}
+                        {result.last_page > 7 && (
+                            <span className="px-1 text-slate-400">…</span>
+                        )}
                     </div>
 
                     <button
@@ -686,12 +1099,12 @@ function SimpleOrdersTable({
                         {TABLE_COLS.map((col) => (
                             <th
                                 key={col.key}
-                                className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600"
+                                className="px-3 py-2.5 font-semibold whitespace-nowrap text-slate-600"
                             >
                                 {col.label}
                             </th>
                         ))}
-                        <th className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
+                        <th className="px-3 py-2.5 font-semibold whitespace-nowrap text-slate-600">
                             View
                         </th>
                     </tr>
@@ -703,19 +1116,29 @@ function SimpleOrdersTable({
                             className="transition-colors hover:bg-slate-50/80"
                         >
                             {TABLE_COLS.map((col) => (
-                                <td key={col.key} className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                <td
+                                    key={col.key}
+                                    className="px-3 py-2 whitespace-nowrap text-slate-700"
+                                >
                                     {col.key === 'status' ? (
-                                        <StatusBadge status={String(order[col.key] ?? '')} />
+                                        <StatusBadge
+                                            status={String(
+                                                order[col.key] ?? '',
+                                            )}
+                                        />
                                     ) : col.key === 'amount' ? (
                                         <span className="font-medium tabular-nums">
-                                            {formatValue(col.key, order[col.key])}
+                                            {formatValue(
+                                                col.key,
+                                                order[col.key],
+                                            )}
                                         </span>
                                     ) : (
                                         formatValue(col.key, order[col.key])
                                     )}
                                 </td>
                             ))}
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                            <td className="px-3 py-2 whitespace-nowrap text-slate-700">
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -730,6 +1153,178 @@ function SimpleOrdersTable({
                     ))}
                 </tbody>
             </table>
+        </div>
+    );
+}
+
+function ProductStockTable({
+    result,
+    onViewProduct,
+}: {
+    result: Extract<ToolResult, { type: 'list_product_records' }>;
+    onViewProduct?: (record: OrderRow) => void;
+}) {
+    if (!result.rows.length) {
+        return (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                No products found.
+            </div>
+        );
+    }
+
+    const cols = [
+        { key: 'name', label: 'Product' },
+        { key: 'code', label: 'Code' },
+        { key: 'quantity', label: 'Stock' },
+        { key: 'store_name', label: 'Store' },
+        { key: 'buying_price', label: 'Buying' },
+        { key: 'selling_price', label: 'Selling' },
+        { key: 'quantity_alert', label: 'Alert At' },
+    ];
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between px-0.5">
+                <p className="text-xs font-medium text-slate-500">
+                    {result.total.toLocaleString()} products
+                </p>
+                <p className="text-xs text-slate-400">
+                    Page {result.current_page} of {result.last_page}
+                </p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+                <table className="w-full min-w-[760px] text-left text-xs">
+                    <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                            {cols.map((col) => (
+                                <th
+                                    key={col.key}
+                                    className="px-3 py-2.5 font-semibold text-slate-600"
+                                >
+                                    {col.label}
+                                </th>
+                            ))}
+                            <th className="px-3 py-2.5 font-semibold text-slate-600">
+                                View
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                        {result.rows.map((row, idx) => (
+                            <tr key={String(row['id'] ?? row['code'] ?? idx)}>
+                                {cols.map((col) => (
+                                    <td
+                                        key={col.key}
+                                        className="px-3 py-2 whitespace-nowrap text-slate-700"
+                                    >
+                                        {col.key === 'quantity' ? (
+                                            <span className="font-semibold tabular-nums">
+                                                {String(row[col.key] ?? '0')}
+                                            </span>
+                                        ) : (
+                                            formatValue(col.key, row[col.key])
+                                        )}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs"
+                                        onClick={() => onViewProduct?.(row)}
+                                    >
+                                        View
+                                    </Button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function GenericAutoTable({ table }: { table: AutoTableData }) {
+    if (!table.rows.length) {
+        return null;
+    }
+
+    const preferred = [
+        'id',
+        'uuid',
+        'order_no',
+        'code',
+        'name',
+        'title',
+        'status',
+        'created_at',
+        'updated_at',
+    ];
+    const seen = new Set<string>();
+    const columns: string[] = [];
+
+    for (const key of preferred) {
+        if (table.rows.some((row) => Object.prototype.hasOwnProperty.call(row, key))) {
+            columns.push(key);
+            seen.add(key);
+        }
+    }
+
+    for (const row of table.rows.slice(0, 80)) {
+        for (const key of Object.keys(row)) {
+            if (seen.has(key)) continue;
+            columns.push(key);
+            seen.add(key);
+        }
+    }
+
+    const visibleColumns = columns.slice(0, 12);
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between px-0.5">
+                <p className="text-xs font-medium text-slate-600">{table.title}</p>
+                <p className="text-xs text-slate-400">
+                    {(table.total ?? table.rows.length).toLocaleString()} row
+                    {(table.total ?? table.rows.length) === 1 ? '' : 's'}
+                    {table.currentPage && table.lastPage
+                        ? ` · Page ${table.currentPage} of ${table.lastPage}`
+                        : ''}
+                    {table.perPage ? ` · Per page ${table.perPage}` : ''}
+                </p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+                <table className="w-full min-w-[760px] text-left text-xs">
+                    <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                            {visibleColumns.map((column) => (
+                                <th
+                                    key={column}
+                                    className="px-3 py-2.5 font-semibold whitespace-nowrap text-slate-600"
+                                >
+                                    {labelFromKey(column)}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                        {table.rows.map((row, idx) => (
+                            <tr key={String(row.id ?? row.uuid ?? idx)}>
+                                {visibleColumns.map((column) => (
+                                    <td
+                                        key={column}
+                                        className="px-3 py-2 align-top whitespace-nowrap text-slate-700"
+                                    >
+                                        {safeCellValue(column, row[column])}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
@@ -752,10 +1347,35 @@ function ToolResultsView({
     const errors: string[] = [];
     const reports: Extract<ToolResult, { type: 'financial_report' }>[] = [];
     const orderTables: Extract<ToolResult, { type: 'orders_table' }>[] = [];
-    const integrations: Array<Extract<ToolResult, { type: 'integration_requirements' | 'integration_setup' }>> = [];
-    const messagingResults: Array<Extract<ToolResult, { type: 'whatsapp_message_sent' }>> = [];
-    const createdTasks: Array<Extract<ToolResult, { type: 'task_created' }>> = [];
-    const taskResults: Array<Extract<ToolResult, { type: 'task_workflow' | 'report_delivery_workflow' }>> = [];
+    const productTables: Extract<ToolResult, { type: 'list_product_records' }>[] =
+        [];
+    const autoTables: AutoTableData[] = [];
+    const integrations: Array<
+        Extract<
+            ToolResult,
+            { type: 'integration_requirements' | 'integration_setup' }
+        >
+    > = [];
+    const messagingResults: Array<
+        Extract<ToolResult, { type: 'whatsapp_message_sent' }>
+    > = [];
+    const createdTasks: Array<Extract<ToolResult, { type: 'task_created' }>> =
+        [];
+    const workspaceResults: Array<
+        Extract<ToolResult, { type: 'model_workspace' }>
+    > = [];
+    const operationalResults: Array<
+        Extract<
+            ToolResult,
+            { type: 'policy_blocked' | 'tool_scaffolded' }
+        >
+    > = [];
+    const taskResults: Array<
+        Extract<
+            ToolResult,
+            { type: 'task_workflow' | 'report_delivery_workflow' }
+        >
+    > = [];
 
     for (const result of results) {
         if (result.type === 'error') {
@@ -766,12 +1386,17 @@ function ToolResultsView({
         if (result.type === 'financial_report') {
             reports.push(result);
             for (const row of result.orders ?? []) {
-                const key = String(row['id'] ?? row['order_no'] ?? JSON.stringify(row));
+                const key = String(
+                    row['id'] ?? row['order_no'] ?? JSON.stringify(row),
+                );
                 rowsByKey.set(key, row);
             }
             continue;
         }
-        if (result.type === 'integration_requirements' || result.type === 'integration_setup') {
+        if (
+            result.type === 'integration_requirements' ||
+            result.type === 'integration_setup'
+        ) {
             integrations.push(result);
             continue;
         }
@@ -783,7 +1408,18 @@ function ToolResultsView({
             createdTasks.push(result);
             continue;
         }
-        if (result.type === 'task_workflow' || result.type === 'report_delivery_workflow') {
+        if (result.type === 'model_workspace') {
+            workspaceResults.push(result);
+            continue;
+        }
+        if (result.type === 'policy_blocked' || result.type === 'tool_scaffolded') {
+            operationalResults.push(result);
+            continue;
+        }
+        if (
+            result.type === 'task_workflow' ||
+            result.type === 'report_delivery_workflow'
+        ) {
             taskResults.push(result);
             continue;
         }
@@ -792,19 +1428,43 @@ function ToolResultsView({
             orderTables.push(result);
             continue;
         }
+        if (result.type === 'list_product_records') {
+            productTables.push(result);
+            continue;
+        }
 
         if (result.type === 'order_detail') {
             const row = result.order;
-            const key = String(row['id'] ?? row['order_no'] ?? JSON.stringify(row));
+            const key = String(
+                row['id'] ?? row['order_no'] ?? JSON.stringify(row),
+            );
+            rowsByKey.set(key, row);
+            continue;
+        }
+        if (result.type === 'get_product_record') {
+            const row = result.record;
+            const key = String(
+                row['id'] ?? row['code'] ?? JSON.stringify(row),
+            );
             rowsByKey.set(key, row);
             continue;
         }
 
-        if (result.type === 'order_created' || result.type === 'order_updated') {
+        if (
+            result.type === 'order_created' ||
+            result.type === 'order_updated'
+        ) {
             infos.push(result.message);
             const row = result.order;
-            const key = String(row['id'] ?? row['order_no'] ?? JSON.stringify(row));
+            const key = String(
+                row['id'] ?? row['order_no'] ?? JSON.stringify(row),
+            );
             rowsByKey.set(key, row);
+            continue;
+        }
+
+        if (isRecordObject(result)) {
+            autoTables.push(...collectAutoTables(result));
         }
     }
 
@@ -819,7 +1479,10 @@ function ToolResultsView({
                 <IntegrationResultView key={`integration-${i}`} result={item} />
             ))}
             {messagingResults.map((item, i) => (
-                <div key={`wa-${i}`} className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                <div
+                    key={`wa-${i}`}
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"
+                >
                     <p className="font-semibold">WhatsApp message sent</p>
                     <p>To: {item.to}</p>
                     {item.provider && <p>Provider: {item.provider}</p>}
@@ -834,12 +1497,72 @@ function ToolResultsView({
                 />
             ))}
             {createdTasks.map((task, i) => (
-                <div key={`created-task-${task.id}-${i}`} className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs text-fuchsia-900">
-                    <p className="font-semibold">{task.message ?? `Task "${task.title}" created.`}</p>
+                <div
+                    key={`created-task-${task.id}-${i}`}
+                    className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs text-fuchsia-900"
+                >
+                    <p className="font-semibold">
+                        {task.message ?? `Task "${task.title}" created.`}
+                    </p>
                     {task.task_url && (
-                        <a href={task.task_url} className="mt-1 inline-flex items-center underline">
+                        <a
+                            href={task.task_url}
+                            className="mt-1 inline-flex items-center underline"
+                        >
                             View task
                         </a>
+                    )}
+                </div>
+            ))}
+            {workspaceResults.map((result, i) => (
+                <div
+                    key={`workspace-${i}`}
+                    className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900"
+                >
+                    <p className="font-semibold">
+                        Workspace: {result.action ?? 'model_workspace'}
+                    </p>
+                    {result.model && <p>Model: {result.model}</p>}
+                    {result.table && <p>Table: {result.table}</p>}
+                    {typeof result.count === 'number' && (
+                        <p>Models found: {result.count}</p>
+                    )}
+                    {typeof result.column_count === 'number' && (
+                        <p>Columns: {result.column_count}</p>
+                    )}
+                    {(result.available_tool_functions?.length ?? 0) > 0 && (
+                        <p>
+                            Tools:{' '}
+                            {result.available_tool_functions!.join(', ')}
+                        </p>
+                    )}
+                    {(result.columns?.length ?? 0) > 0 && (
+                        <p>
+                            Sample columns:{' '}
+                            {result.columns!.slice(0, 8).join(', ')}
+                        </p>
+                    )}
+                    {(result.created?.length ?? 0) > 0 && (
+                        <p>Created tools: {result.created!.length}</p>
+                    )}
+                    {(result.skipped?.length ?? 0) > 0 && (
+                        <p>Skipped tools: {result.skipped!.length}</p>
+                    )}
+                </div>
+            ))}
+            {operationalResults.map((result, i) => (
+                <div
+                    key={`ops-${i}`}
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+                >
+                    <p className="font-semibold">
+                        {result.type.replace(/_/g, ' ')}
+                    </p>
+                    {result.message && <p>{result.message}</p>}
+                    {'tool' in result && result.tool && <p>Tool: {result.tool}</p>}
+                    {'risk' in result && result.risk && <p>Risk: {result.risk}</p>}
+                    {'details' in result && result.details && (
+                        <p>Details: {result.details}</p>
                     )}
                 </div>
             ))}
@@ -850,15 +1573,34 @@ function ToolResultsView({
                     onViewOrder={onViewOrder}
                 />
             ))}
+            {productTables.map((table, i) => (
+                <ProductStockTable
+                    key={`product-table-${i}`}
+                    result={table}
+                    onViewProduct={onViewOrder}
+                />
+            ))}
+            {autoTables.map((table, i) => (
+                <GenericAutoTable key={`${table.id}-${i}`} table={table} />
+            ))}
             {infos.map((message, i) => (
-                <div key={`${message}-${i}`} className="text-xs font-semibold text-slate-700">
+                <div
+                    key={`${message}-${i}`}
+                    className="text-xs font-semibold text-slate-700"
+                >
                     {message}
                 </div>
             ))}
-            {rows.length > 0 && <SimpleOrdersTable orders={rows} onViewOrder={onViewOrder} />}
+            {rows.length > 0 && (
+                <SimpleOrdersTable orders={rows} onViewOrder={onViewOrder} />
+            )}
             {errors.map((message, i) => (
-                <div key={`${message}-${i}`} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
-                    <span className="font-semibold">Error: </span>{message}
+                <div
+                    key={`${message}-${i}`}
+                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700"
+                >
+                    <span className="font-semibold">Error: </span>
+                    {message}
                 </div>
             ))}
         </div>
@@ -870,7 +1612,10 @@ function TaskWorkflowView({
     onConfirmTask,
     isConfirming,
 }: {
-    task: Extract<ToolResult, { type: 'task_workflow' | 'report_delivery_workflow' }>;
+    task: Extract<
+        ToolResult,
+        { type: 'task_workflow' | 'report_delivery_workflow' }
+    >;
     onConfirmTask: (taskId: string) => Promise<void>;
     isConfirming: boolean;
 }) {
@@ -882,9 +1627,11 @@ function TaskWorkflowView({
                 <Badge variant="outline">Step: {task.current_step}</Badge>
             </div>
             <p className="font-medium">{task.message}</p>
-            {(task.summary?.merchants_count || task.summary?.total_matched_orders) && (
+            {(task.summary?.merchants_count ||
+                task.summary?.total_matched_orders) && (
                 <p>
-                    Merchants: {task.summary?.merchants_count ?? 0} | Matched Orders: {task.summary?.total_matched_orders ?? 0}
+                    Merchants: {task.summary?.merchants_count ?? 0} | Matched
+                    Orders: {task.summary?.total_matched_orders ?? 0}
                 </p>
             )}
 
@@ -900,10 +1647,20 @@ function TaskWorkflowView({
                         </thead>
                         <tbody>
                             {task.merchants!.map((m, idx) => (
-                                <tr key={`${m.merchant}-${idx}`} className="border-b border-indigo-50">
-                                    <td className="px-2 py-1.5">{m.merchant}</td>
-                                    <td className="px-2 py-1.5">{m.start_date ?? 'N/A'} to {m.end_date ?? 'N/A'}</td>
-                                    <td className="px-2 py-1.5">{m.matched_count ?? 0}</td>
+                                <tr
+                                    key={`${m.merchant}-${idx}`}
+                                    className="border-b border-indigo-50"
+                                >
+                                    <td className="px-2 py-1.5">
+                                        {m.merchant}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                        {m.start_date ?? 'N/A'} to{' '}
+                                        {m.end_date ?? 'N/A'}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                        {m.matched_count ?? 0}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -912,11 +1669,12 @@ function TaskWorkflowView({
             )}
 
             {(() => {
-                const matchedOrders = (task.merchants ?? []).flatMap((merchant) =>
-                    (merchant.matched_orders ?? []).map((order) => ({
-                        merchant: merchant.merchant,
-                        ...order,
-                    })),
+                const matchedOrders = (task.merchants ?? []).flatMap(
+                    (merchant) =>
+                        (merchant.matched_orders ?? []).map((order) => ({
+                            merchant: merchant.merchant,
+                            ...order,
+                        })),
                 );
 
                 if (matchedOrders.length === 0) return null;
@@ -935,12 +1693,30 @@ function TaskWorkflowView({
                             </thead>
                             <tbody>
                                 {matchedOrders.map((order, idx) => (
-                                    <tr key={`${order.id}-${idx}`} className="border-b border-indigo-50">
-                                        <td className="px-2 py-1.5">{order.merchant}</td>
-                                        <td className="px-2 py-1.5">{order.order_no || '-'}</td>
-                                        <td className="px-2 py-1.5">{order.code || '-'}</td>
-                                        <td className="px-2 py-1.5">{order.status || '-'}</td>
-                                        <td className="px-2 py-1.5">{order.order_date ? formatValue('order_date', order.order_date) : '-'}</td>
+                                    <tr
+                                        key={`${order.id}-${idx}`}
+                                        className="border-b border-indigo-50"
+                                    >
+                                        <td className="px-2 py-1.5">
+                                            {order.merchant}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                            {order.order_no || '-'}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                            {order.code || '-'}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                            {order.status || '-'}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                            {order.order_date
+                                                ? formatValue(
+                                                      'order_date',
+                                                      order.order_date,
+                                                  )
+                                                : '-'}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -981,21 +1757,30 @@ function TaskWorkflowView({
 function IntegrationResultView({
     result,
 }: {
-    result: Extract<ToolResult, { type: 'integration_requirements' | 'integration_setup' }>;
+    result: Extract<
+        ToolResult,
+        { type: 'integration_requirements' | 'integration_setup' }
+    >;
 }) {
     if (result.type === 'integration_requirements') {
         return (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                 <p className="font-semibold">{result.message}</p>
                 {(result.provider_options?.length ?? 0) > 0 && (
-                    <p className="mt-1">Providers: {result.provider_options!.join(', ')}</p>
+                    <p className="mt-1">
+                        Providers: {result.provider_options!.join(', ')}
+                    </p>
                 )}
                 {(result.required_inputs?.length ?? 0) > 0 && (
-                    <p className="mt-1">Required inputs: {result.required_inputs!.join(', ')}</p>
+                    <p className="mt-1">
+                        Required inputs: {result.required_inputs!.join(', ')}
+                    </p>
                 )}
                 {(result.questions?.length ?? 0) > 0 && (
                     <div className="mt-1 space-y-0.5">
-                        {result.questions!.map((q, i) => <p key={`${q}-${i}`}>- {q}</p>)}
+                        {result.questions!.map((q, i) => (
+                            <p key={`${q}-${i}`}>- {q}</p>
+                        ))}
                     </div>
                 )}
             </div>
@@ -1007,25 +1792,42 @@ function IntegrationResultView({
             <p className="font-semibold">{result.message}</p>
             <p className="mt-1">Provider: {result.provider}</p>
             {(result.missing_env_keys?.length ?? 0) > 0 && (
-                <p className="mt-1">Missing env keys: {result.missing_env_keys!.join(', ')}</p>
+                <p className="mt-1">
+                    Missing env keys: {result.missing_env_keys!.join(', ')}
+                </p>
             )}
             {result.next_step && <p className="mt-1">{result.next_step}</p>}
         </div>
     );
 }
 
-function FinancialReportView({ report }: { report: Extract<ToolResult, { type: 'financial_report' }> }) {
+function FinancialReportView({
+    report,
+}: {
+    report: Extract<ToolResult, { type: 'financial_report' }>;
+}) {
     const fmtMoney = (value: number) =>
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'KES', maximumFractionDigits: 2 }).format(value);
+        new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'KES',
+            maximumFractionDigits: 2,
+        }).format(value);
 
     return (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Financial Report</Badge>
                 <Badge variant="outline">Status: {report.status}</Badge>
-                {report.merchant && <Badge variant="outline">Merchant: {report.merchant}</Badge>}
+                {report.merchant && (
+                    <Badge variant="outline">Merchant: {report.merchant}</Badge>
+                )}
                 {report.excel_download_url && (
-                    <Button asChild size="sm" variant="outline" className="ml-auto h-7 px-2 text-[11px]">
+                    <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 px-2 text-[11px]"
+                    >
                         <a href={report.excel_download_url}>
                             <Download className="mr-1 h-3.5 w-3.5" />
                             Download Excel
@@ -1037,21 +1839,37 @@ function FinancialReportView({ report }: { report: Extract<ToolResult, { type: '
             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                 <div className="rounded border border-slate-200 bg-white p-2">
                     <p className="text-slate-500">Total Orders</p>
-                    <p className="font-semibold text-slate-900">{report.total_orders.toLocaleString()}</p>
+                    <p className="font-semibold text-slate-900">
+                        {report.total_orders.toLocaleString()}
+                    </p>
                 </div>
                 <div className="rounded border border-slate-200 bg-white p-2">
                     <p className="text-slate-500">Total Revenue</p>
-                    <p className="font-semibold text-slate-900">{fmtMoney(report.total_revenue)}</p>
+                    <p className="font-semibold text-slate-900">
+                        {fmtMoney(report.total_revenue)}
+                    </p>
                 </div>
                 <div className="rounded border border-slate-200 bg-white p-2">
                     <p className="text-slate-500">Average Order Value</p>
-                    <p className="font-semibold text-slate-900">{fmtMoney(report.average_order_value)}</p>
+                    <p className="font-semibold text-slate-900">
+                        {fmtMoney(report.average_order_value)}
+                    </p>
                 </div>
             </div>
 
-            {(report.date_range?.earliest_order_date || report.date_range?.latest_order_date) && (
+            {(report.date_range?.earliest_order_date ||
+                report.date_range?.latest_order_date) && (
                 <div className="text-xs text-slate-700">
-                    Date Range: {formatValue('order_date', report.date_range?.earliest_order_date)} to {formatValue('order_date', report.date_range?.latest_order_date)}
+                    Date Range:{' '}
+                    {formatValue(
+                        'order_date',
+                        report.date_range?.earliest_order_date,
+                    )}{' '}
+                    to{' '}
+                    {formatValue(
+                        'order_date',
+                        report.date_range?.latest_order_date,
+                    )}
                 </div>
             )}
 
@@ -1060,19 +1878,35 @@ function FinancialReportView({ report }: { report: Extract<ToolResult, { type: '
                     <table className="w-full min-w-[520px] text-left text-xs">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50">
-                                <th className="px-3 py-2 font-semibold text-slate-600">Product</th>
-                                <th className="px-3 py-2 font-semibold text-slate-600">Orders</th>
-                                <th className="px-3 py-2 font-semibold text-slate-600">Revenue</th>
-                                <th className="px-3 py-2 font-semibold text-slate-600">Avg Price</th>
+                                <th className="px-3 py-2 font-semibold text-slate-600">
+                                    Product
+                                </th>
+                                <th className="px-3 py-2 font-semibold text-slate-600">
+                                    Orders
+                                </th>
+                                <th className="px-3 py-2 font-semibold text-slate-600">
+                                    Revenue
+                                </th>
+                                <th className="px-3 py-2 font-semibold text-slate-600">
+                                    Avg Price
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {report.product_breakdown!.map((row, idx) => (
                                 <tr key={`${row.product_name}-${idx}`}>
-                                    <td className="px-3 py-2 text-slate-800">{row.product_name}</td>
-                                    <td className="px-3 py-2 text-slate-700">{row.order_count}</td>
-                                    <td className="px-3 py-2 text-slate-700">{fmtMoney(row.total_revenue)}</td>
-                                    <td className="px-3 py-2 text-slate-700">{fmtMoney(row.average_price)}</td>
+                                    <td className="px-3 py-2 text-slate-800">
+                                        {row.product_name}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-700">
+                                        {row.order_count}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-700">
+                                        {fmtMoney(row.total_revenue)}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-700">
+                                        {fmtMoney(row.average_price)}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1098,25 +1932,33 @@ function OrderDetailsDialog({
 
     const orderedKeys = [
         ...ORDER_DETAIL_PRIORITY.filter((key) => key in order),
-        ...Object.keys(order).filter((key) => !ORDER_DETAIL_PRIORITY.includes(key)),
+        ...Object.keys(order).filter(
+            (key) => !ORDER_DETAIL_PRIORITY.includes(key),
+        ),
     ];
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>Order #{String(order['order_no'] ?? 'Details')}</DialogTitle>
+                    <DialogTitle>
+                        Order #{String(order['order_no'] ?? 'Details')}
+                    </DialogTitle>
                 </DialogHeader>
                 <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                     {orderedKeys.map((key) => (
                         <div key={key}>
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
                                 {key.replace(/_/g, ' ')}
                             </p>
                             <p className="mt-0.5 text-slate-900">
-                                {key === 'status'
-                                    ? <StatusBadge status={String(order[key] ?? '')} />
-                                    : formatValue(key, order[key])}
+                                {key === 'status' ? (
+                                    <StatusBadge
+                                        status={String(order[key] ?? '')}
+                                    />
+                                ) : (
+                                    formatValue(key, order[key])
+                                )}
                             </p>
                         </div>
                     ))}
@@ -1135,25 +1977,41 @@ export default function Chat({
     const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
+    const [conversationId, setConversationId] = useState<string | null>(
+        initialConversationId,
+    );
     const [toasts, setToasts] = useState<Toast[]>([]);
-    const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({});
+    const [activityOpen, setActivityOpen] = useState<Record<string, boolean>>(
+        {},
+    );
     const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
-    const [confirmingTaskId, setConfirmingTaskId] = useState<string | null>(null);
+    const [confirmingTaskId, setConfirmingTaskId] = useState<string | null>(
+        null,
+    );
     const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
 
-    const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
+    const canSend = useMemo(
+        () => input.trim().length > 0 && !isTyping,
+        [input, isTyping],
+    );
 
     const waitingForFirstResponseToken = useMemo(() => {
         if (!isTyping) return false;
-        const latestAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+        const latestAssistant = [...messages]
+            .reverse()
+            .find((m) => m.role === 'assistant');
         if (!latestAssistant) return true;
-        return latestAssistant.content.trim().length === 0 && !latestAssistant.toolResults?.length;
+        return (
+            latestAssistant.content.trim().length === 0 &&
+            !latestAssistant.toolResults?.length
+        );
     }, [messages, isTyping]);
 
     const waitingForPostToolNarration = useMemo(() => {
         if (!isTyping) return false;
-        const latestAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+        const latestAssistant = [...messages]
+            .reverse()
+            .find((m) => m.role === 'assistant');
         if (!latestAssistant) return false;
         const hasToolResults = (latestAssistant.toolResults ?? []).length > 0;
         const hasToolCalls = (latestAssistant.toolCalls ?? []).length > 0;
@@ -1163,10 +2021,16 @@ export default function Chat({
 
     const activeAssistantId = useMemo(() => {
         if (!isTyping) return null;
-        return [...messages].reverse().find((m) => m.role === 'assistant')?.id ?? null;
+        return (
+            [...messages].reverse().find((m) => m.role === 'assistant')?.id ??
+            null
+        );
     }, [messages, isTyping]);
 
-    const showEmptyState = useMemo(() => messages.length === 0 && !isTyping, [messages.length, isTyping]);
+    const showEmptyState = useMemo(
+        () => messages.length === 0 && !isTyping,
+        [messages.length, isTyping],
+    );
 
     useEffect(() => {
         setMessages(initialMessages);
@@ -1176,7 +2040,10 @@ export default function Chat({
     const pushToast = (toast: Omit<Toast, 'id'>) => {
         const id = `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         setToasts((prev) => [...prev, { ...toast, id }]);
-        window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3200);
+        window.setTimeout(
+            () => setToasts((prev) => prev.filter((t) => t.id !== id)),
+            3200,
+        );
     };
 
     const updateAssistantField = (
@@ -1184,8 +2051,25 @@ export default function Chat({
         updater: (msg: ChatMessage) => Partial<ChatMessage>,
     ) => {
         setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, ...updater(m) } : m)),
+            prev.map((m) =>
+                m.id === assistantId ? { ...m, ...updater(m) } : m,
+            ),
         );
+    };
+
+    const appendAgentActivity = (
+        assistantId: string,
+        item: Omit<AgentActivityItem, 'id'>,
+    ) => {
+        updateAssistantField(assistantId, (m) => ({
+            activity: [
+                ...(m.activity ?? []),
+                {
+                    ...item,
+                    id: `act-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                },
+            ],
+        }));
     };
 
     const onConfirmTask = async (taskId: string) => {
@@ -1196,7 +2080,9 @@ export default function Chat({
             const csrfToken = getCsrfToken();
             const csrfHeaders: Record<string, string> = xsrfToken
                 ? { 'X-XSRF-TOKEN': xsrfToken }
-                : (csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {});
+                : csrfToken
+                  ? { 'X-CSRF-TOKEN': csrfToken }
+                  : {};
             const response = await fetch(`/report-tasks/${taskId}/confirm`, {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -1223,14 +2109,22 @@ export default function Chat({
                     content: '',
                     toolCalls: [],
                     toolResults: [result],
+                    activity: [],
                 },
             ]);
-            pushToast({ type: 'success', title: 'Task advanced', description: 'Workflow moved to the next step.' });
+            pushToast({
+                type: 'success',
+                title: 'Task advanced',
+                description: 'Workflow moved to the next step.',
+            });
         } catch (error) {
             pushToast({
                 type: 'error',
                 title: 'Task confirmation failed',
-                description: error instanceof Error ? error.message : 'Unexpected error while confirming task.',
+                description:
+                    error instanceof Error
+                        ? error.message
+                        : 'Unexpected error while confirming task.',
             });
         } finally {
             setConfirmingTaskId(null);
@@ -1242,12 +2136,24 @@ export default function Chat({
         const prompt = input.trim();
         if (!prompt || isTyping) return;
 
-        const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content: prompt };
+        const userMessage: ChatMessage = {
+            id: `user-${Date.now()}`,
+            role: 'user',
+            content: prompt,
+        };
         const assistantId = `assistant-${Date.now()}`;
         const nextMessages: ChatMessage[] = [
             ...messages,
             userMessage,
-            { id: assistantId, role: 'assistant', content: '', thinking: '', toolCalls: [], toolResults: [] },
+            {
+                id: assistantId,
+                role: 'assistant',
+                content: 'Thinking...',
+                thinking: '',
+                toolCalls: [],
+                toolResults: [],
+                activity: [],
+            },
         ];
 
         setMessages(nextMessages);
@@ -1259,10 +2165,15 @@ export default function Chat({
             const csrfToken = getCsrfToken();
             const csrfHeaders: Record<string, string> = xsrfToken
                 ? { 'X-XSRF-TOKEN': xsrfToken }
-                : (csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {});
+                : csrfToken
+                  ? { 'X-CSRF-TOKEN': csrfToken }
+                  : {};
             const payloadMessages = nextMessages
                 .filter((m) => m.role !== 'assistant' || m.id !== assistantId)
-                .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+                .map((m) => ({
+                    role: m.role,
+                    content: m.content.slice(0, 4000),
+                }))
                 .filter((m) => m.content.trim().length > 0)
                 .slice(-40);
 
@@ -1281,14 +2192,17 @@ export default function Chat({
                 }),
             });
 
-            const responseConversationId = response.headers.get('X-Conversation-Id');
+            const responseConversationId =
+                response.headers.get('X-Conversation-Id');
             if (responseConversationId) {
                 setConversationId(responseConversationId);
             }
 
             if (!response.ok || !response.body) {
                 const fallback = await response.text();
-                throw new Error(fallback || 'Failed to start streaming response.');
+                throw new Error(
+                    fallback || 'Failed to start streaming response.',
+                );
             }
 
             const reader = response.body.getReader();
@@ -1303,7 +2217,10 @@ export default function Chat({
             let hasThinkingStream = false;
             let receivedToolResult = false;
             let latestContextUsage: ContextUsage | null = null;
-            const pendingClientTasks: Array<{ payload: Record<string, unknown>; chatMessageId: string }> = [];
+            const pendingClientTasks: Array<{
+                payload: Record<string, unknown>;
+                chatMessageId: string;
+            }> = [];
             const toolResultTypes = new Set([
                 'orders_table',
                 'order_detail',
@@ -1318,21 +2235,28 @@ export default function Chat({
                 'report_delivery_workflow',
             ]);
 
-            const popTrailingTagPrefix = (value: string, tag: string): { text: string; carry: string } => {
+            const popTrailingTagPrefix = (
+                value: string,
+                tag: string,
+            ): { text: string; carry: string } => {
                 const maxPrefixLength = Math.min(tag.length - 1, value.length);
                 for (let length = maxPrefixLength; length > 0; length -= 1) {
                     const suffix = value.slice(-length);
-                    if (tag.startsWith(suffix)) return { text: value.slice(0, -length), carry: suffix };
+                    if (tag.startsWith(suffix))
+                        return { text: value.slice(0, -length), carry: suffix };
                 }
                 return { text: value, carry: '' };
             };
 
-            const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+            const sleep = (ms: number) =>
+                new Promise((resolve) => window.setTimeout(resolve, ms));
 
             const updateAssistantMessage = (includeThinking = false) => {
                 updateAssistantField(assistantId, (m) => ({
                     content: answer.trim(),
-                    thinking: includeThinking ? thinking.trim() : (m.thinking ?? ''),
+                    thinking: includeThinking
+                        ? thinking.trim()
+                        : (m.thinking ?? ''),
                 }));
             };
 
@@ -1343,21 +2267,31 @@ export default function Chat({
                     if (mode === 'answer') {
                         const openTagIndex = chunk.indexOf('<think>');
                         if (openTagIndex === -1) {
-                            const { text, carry: nextCarry } = popTrailingTagPrefix(chunk, '<think>');
-                            answer += text; carry = nextCarry; chunk = '';
+                            const { text, carry: nextCarry } =
+                                popTrailingTagPrefix(chunk, '<think>');
+                            answer += text;
+                            carry = nextCarry;
+                            chunk = '';
                         } else {
                             answer += chunk.slice(0, openTagIndex);
-                            chunk = chunk.slice(openTagIndex + '<think>'.length);
+                            chunk = chunk.slice(
+                                openTagIndex + '<think>'.length,
+                            );
                             mode = 'thinking';
                         }
                     } else {
                         const closeTagIndex = chunk.indexOf('</think>');
                         if (closeTagIndex === -1) {
-                            const { text, carry: nextCarry } = popTrailingTagPrefix(chunk, '</think>');
-                            thinking += text; carry = nextCarry; chunk = '';
+                            const { text, carry: nextCarry } =
+                                popTrailingTagPrefix(chunk, '</think>');
+                            thinking += text;
+                            carry = nextCarry;
+                            chunk = '';
                         } else {
                             thinking += chunk.slice(0, closeTagIndex);
-                            chunk = chunk.slice(closeTagIndex + '</think>'.length);
+                            chunk = chunk.slice(
+                                closeTagIndex + '</think>'.length,
+                            );
                             mode = 'answer';
                         }
                     }
@@ -1365,7 +2299,8 @@ export default function Chat({
                 if (!hasThinkingStream) {
                     const t1 = splitTerminalThinking(answer, thinking);
                     const t2 = splitHeuristicThinking(t1.answer, t1.thinking);
-                    answer = t2.answer; thinking = t2.thinking;
+                    answer = t2.answer;
+                    thinking = t2.thinking;
                 }
                 updateAssistantMessage();
             };
@@ -1376,13 +2311,29 @@ export default function Chat({
                 while (pendingAnswerChars.length > 0) {
                     const queueLength = pendingAnswerChars.length;
                     const batchSize = receivedToolResult
-                        ? (queueLength > 1200 ? 30 : queueLength > 600 ? 18 : queueLength > 250 ? 10 : 4)
-                        : (queueLength > 1500 ? 120 : queueLength > 800 ? 64 : queueLength > 300 ? 24 : 6);
+                        ? queueLength > 1200
+                            ? 30
+                            : queueLength > 600
+                              ? 18
+                              : queueLength > 250
+                                ? 10
+                                : 4
+                        : queueLength > 1500
+                          ? 120
+                          : queueLength > 800
+                            ? 64
+                            : queueLength > 300
+                              ? 24
+                              : 6;
                     consumeDelta(pendingAnswerChars.slice(0, batchSize));
                     pendingAnswerChars = pendingAnswerChars.slice(batchSize);
                     const delay = receivedToolResult
-                        ? (queueLength > 600 ? 10 : 16)
-                        : (queueLength > 600 ? 0 : 8);
+                        ? queueLength > 600
+                            ? 10
+                            : 16
+                        : queueLength > 600
+                          ? 0
+                          : 8;
                     await sleep(delay);
                 }
                 animatorRunning = false;
@@ -1402,26 +2353,129 @@ export default function Chat({
 
                     if (line !== '') {
                         let event: Record<string, unknown>;
-                        try { event = JSON.parse(line); } catch { newlineIndex = rawBuffer.indexOf('\n'); continue; }
+                        try {
+                            event = JSON.parse(line);
+                        } catch {
+                            newlineIndex = rawBuffer.indexOf('\n');
+                            continue;
+                        }
 
                         // ── Regular text delta ───────────────────────────────
-                        if (event['type'] === 'delta' && typeof event['content'] === 'string') {
+                        if (
+                            event['type'] === 'delta' &&
+                            typeof event['content'] === 'string'
+                        ) {
                             pendingAnswerChars += event['content'];
                             void drainCharQueue();
                         }
 
+                        if (event['type'] === 'status') {
+                            const phase = String(
+                                event['phase'] ?? '',
+                            ).toLowerCase();
+                            const statusText =
+                                phase === 'planning'
+                                    ? 'Planning the best steps...'
+                                    : phase === 'executing'
+                                      ? 'Executing tools...'
+                                      : '';
+                            const phaseLabel =
+                                phase === 'planning'
+                                    ? 'Planning'
+                                    : phase === 'executing'
+                                      ? 'Executing'
+                                      : 'Processing';
+                            if (statusText) {
+                                updateAssistantField(assistantId, (m) => ({
+                                    content:
+                                        m.content.trim() === '' ||
+                                        m.content === 'Thinking...'
+                                            ? statusText
+                                            : m.content,
+                                }));
+                            }
+                            appendAgentActivity(assistantId, {
+                                kind: 'status',
+                                title: `${phaseLabel} phase`,
+                                detail:
+                                    statusText || 'Working on your request.',
+                                state:
+                                    phase === 'executing'
+                                        ? 'running'
+                                        : 'completed',
+                            });
+                        }
+
+                        if (
+                            event['type'] === 'plan' &&
+                            typeof event['plan'] === 'object' &&
+                            event['plan'] !== null
+                        ) {
+                            const plan = event['plan'] as Record<
+                                string,
+                                unknown
+                            >;
+                            const goal =
+                                typeof plan.goal === 'string' ? plan.goal : '';
+                            appendAgentActivity(assistantId, {
+                                kind: 'note',
+                                title: 'Execution plan created',
+                                detail: goal ? `Goal: ${goal}` : undefined,
+                                state: 'completed',
+                            });
+
+                            const steps = Array.isArray(plan.steps)
+                                ? plan.steps
+                                : [];
+                            steps.forEach((rawStep, index) => {
+                                if (!rawStep || typeof rawStep !== 'object')
+                                    return;
+                                const step = rawStep as Record<string, unknown>;
+                                const stepNo = Number(step.step);
+                                const action =
+                                    typeof step.action === 'string'
+                                        ? step.action
+                                        : 'Planned action';
+                                const tool =
+                                    typeof step.tool === 'string'
+                                        ? step.tool
+                                        : 'none';
+                                const risk =
+                                    typeof step.risk === 'string'
+                                        ? step.risk
+                                        : 'medium';
+                                appendAgentActivity(assistantId, {
+                                    kind: 'plan_step',
+                                    title: `Step ${Number.isFinite(stepNo) && stepNo > 0 ? stepNo : index + 1}: ${action}`,
+                                    detail: `Tool: ${tool} | Risk: ${risk}`,
+                                    state: 'completed',
+                                });
+                            });
+                        }
+
                         // ── Thinking delta ───────────────────────────────────
-                        if (event['type'] === 'thinking_delta' && typeof event['content'] === 'string') {
+                        if (
+                            event['type'] === 'thinking_delta' &&
+                            typeof event['content'] === 'string'
+                        ) {
                             hasThinkingStream = true;
                             thinking += event['content'];
                         }
 
                         if (event['type'] === 'context_usage') {
-                            const promptEvalCount = Number(event['prompt_eval_count']);
+                            const promptEvalCount = Number(
+                                event['prompt_eval_count'],
+                            );
                             const evalCount = Number(event['eval_count']);
-                            const contextWindow = Number(event['context_window']);
-                            const contextUsedPct = Number(event['context_used_pct']);
-                            const contextRemaining = Number(event['context_remaining']);
+                            const contextWindow = Number(
+                                event['context_window'],
+                            );
+                            const contextUsedPct = Number(
+                                event['context_used_pct'],
+                            );
+                            const contextRemaining = Number(
+                                event['context_remaining'],
+                            );
                             const iterationValue = Number(event['iteration']);
 
                             if (
@@ -1437,7 +2491,9 @@ export default function Chat({
                                     context_window: contextWindow,
                                     context_used_pct: contextUsedPct,
                                     context_remaining: contextRemaining,
-                                    iteration: Number.isFinite(iterationValue) ? iterationValue : undefined,
+                                    iteration: Number.isFinite(iterationValue)
+                                        ? iterationValue
+                                        : undefined,
                                 };
                                 setContextUsage(latestContextUsage);
                             }
@@ -1447,12 +2503,23 @@ export default function Chat({
                         if (event['type'] === 'tool_call') {
                             const toolCall: ToolCall = {
                                 tool: String(event['tool'] ?? ''),
-                                args: (event['args'] as Record<string, unknown>) ?? {},
+                                args:
+                                    (event['args'] as Record<
+                                        string,
+                                        unknown
+                                    >) ?? {},
                                 status: 'running',
                             };
                             updateAssistantField(assistantId, (m) => ({
                                 toolCalls: [...(m.toolCalls ?? []), toolCall],
                             }));
+                            appendAgentActivity(assistantId, {
+                                kind: 'tool_call',
+                                title: `Calling tool: ${toolCall.tool || 'unknown'}`,
+                                detail: shortJson(toolCall.args),
+                                tool: toolCall.tool,
+                                state: 'running',
+                            });
 
                             if (toolCall.tool === 'create_task') {
                                 pendingClientTasks.push({
@@ -1466,10 +2533,18 @@ export default function Chat({
                         const eventType = String(event['type'] ?? '');
                         const isToolResultError =
                             eventType === 'error' &&
-                            !Object.prototype.hasOwnProperty.call(event, 'details') &&
-                            !Object.prototype.hasOwnProperty.call(event, 'upstream_status');
+                            !Object.prototype.hasOwnProperty.call(
+                                event,
+                                'details',
+                            ) &&
+                            !Object.prototype.hasOwnProperty.call(
+                                event,
+                                'upstream_status',
+                            );
                         const isToolResult =
-                            eventType === 'tool_result' || toolResultTypes.has(eventType) || isToolResultError;
+                            eventType === 'tool_result' ||
+                            toolResultTypes.has(eventType) ||
+                            isToolResultError;
 
                         if (isToolResult) {
                             receivedToolResult = true;
@@ -1482,22 +2557,31 @@ export default function Chat({
                                     ? wrappedResult
                                     : event
                             ) as ToolResult;
-                            const resultType = String((result as { type?: string }).type ?? '');
+                            const resultType = String(
+                                (result as { type?: string }).type ?? '',
+                            );
                             const failed = resultType === 'error';
 
                             updateAssistantField(assistantId, (m) => ({
                                 toolResults: [...(m.toolResults ?? []), result],
                                 toolCalls: (() => {
                                     const current = [...(m.toolCalls ?? [])];
-                                    for (let i = current.length - 1; i >= 0; i -= 1) {
+                                    for (
+                                        let i = current.length - 1;
+                                        i >= 0;
+                                        i -= 1
+                                    ) {
                                         const item = current[i];
                                         if (
                                             item.tool === toolName &&
-                                            (item.status ?? 'running') === 'running'
+                                            (item.status ?? 'running') ===
+                                                'running'
                                         ) {
                                             current[i] = {
                                                 ...item,
-                                                status: failed ? 'failed' : 'completed',
+                                                status: failed
+                                                    ? 'failed'
+                                                    : 'completed',
                                                 resultType,
                                             };
                                             break;
@@ -1506,21 +2590,59 @@ export default function Chat({
                                     return current;
                                 })(),
                             }));
+                            appendAgentActivity(assistantId, {
+                                kind: 'tool_result',
+                                title: `${failed ? 'Tool failed' : 'Tool completed'}: ${toolName || 'unknown'}`,
+                                detail: `Result type: ${resultType || 'unknown'}`,
+                                tool: toolName,
+                                state: failed ? 'failed' : 'completed',
+                            });
 
-                            if (result.type === 'task_created' && pendingClientTasks.length > 0) {
+                            if (
+                                toolName === 'create_task' &&
+                                pendingClientTasks.length > 0
+                            ) {
                                 pendingClientTasks.shift();
+                            }
+
+                            if (result.type === 'task_created') {
                                 pushToast({
                                     type: 'success',
                                     title: 'Task created',
-                                    description: result.task_url ? `Track it at ${result.task_url}` : result.message ?? result.title,
+                                    description: result.task_url
+                                        ? `Track it at ${result.task_url}`
+                                        : (result.message ?? result.title),
                                 });
                             }
                         }
 
+                        if (event['type'] === 'critic') {
+                            const tool = String(event['tool'] ?? 'unknown');
+                            const ok = Boolean(event['ok']);
+                            const severity = String(event['severity'] ?? 'low');
+                            const issues = Array.isArray(event['issues'])
+                                ? event['issues'].map(String)
+                                : [];
+                            appendAgentActivity(assistantId, {
+                                kind: 'critic',
+                                title: `Quality check (${tool})`,
+                                detail:
+                                    issues.length > 0
+                                        ? issues.join('\n')
+                                        : `No issues detected (severity: ${severity}).`,
+                                tool,
+                                state: ok ? 'completed' : 'failed',
+                            });
+                        }
+
                         // ── Error ─────────────────────────────────────────────
                         if (eventType === 'error') {
-                            const msg = [event['message'], event['details']].filter(Boolean).join(' ');
-                            throw new Error(`${msg || 'Streaming error.'}${event['upstream_status'] ? ` (upstream: ${event['upstream_status']})` : ''}`);
+                            const msg = [event['message'], event['details']]
+                                .filter(Boolean)
+                                .join(' ');
+                            throw new Error(
+                                `${msg || 'Streaming error.'}${event['upstream_status'] ? ` (upstream: ${event['upstream_status']})` : ''}`,
+                            );
                         }
                     }
 
@@ -1529,12 +2651,20 @@ export default function Chat({
             }
 
             // Drain remaining chars
-            while (pendingAnswerChars.length > 0 || animatorRunning) await sleep(8);
+            while (pendingAnswerChars.length > 0 || animatorRunning)
+                await sleep(8);
 
             if (!hasThinkingStream) {
                 const t1 = splitTerminalThinking(answer, thinking);
                 const t2 = splitHeuristicThinking(t1.answer, t1.thinking);
-                answer = t2.answer; thinking = t2.thinking;
+                answer = t2.answer;
+                thinking = t2.thinking;
+            }
+
+            if (answer.trim() === '') {
+                answer = receivedToolResult
+                    ? 'I completed the request. Please review the tool results above.'
+                    : 'I could not generate a visible response this time. Please retry.';
             }
 
             updateAssistantField(assistantId, () => ({
@@ -1580,19 +2710,36 @@ export default function Chat({
             if (latestContextUsage) {
                 const pct = latestContextUsage.context_used_pct.toFixed(2);
                 pushToast({
-                    type: latestContextUsage.context_used_pct >= 85 ? 'error' : 'info',
+                    type:
+                        latestContextUsage.context_used_pct >= 85
+                            ? 'error'
+                            : 'info',
                     title: 'Context usage',
                     description: `Prompt: ${latestContextUsage.prompt_eval_count.toLocaleString()} / ${latestContextUsage.context_window.toLocaleString()} tokens (${pct}%)`,
                 });
             }
 
-            pushToast({ type: 'success', title: 'Response complete', description: 'Streaming finished successfully.' });
+            pushToast({
+                type: 'success',
+                title: 'Response complete',
+                description: 'Streaming finished successfully.',
+            });
         } catch (requestError) {
             pushToast({
                 type: 'error',
                 title: 'Request failed',
-                description: requestError instanceof Error ? requestError.message : 'Failed to get AI response.',
+                description:
+                    requestError instanceof Error
+                        ? requestError.message
+                        : 'Failed to get AI response.',
             });
+            updateAssistantField(assistantId, () => ({
+                content:
+                    requestError instanceof Error
+                        ? `I hit an error while processing your request: ${requestError.message}`
+                        : 'I hit an error while processing your request. Please retry.',
+                thinking: '',
+            }));
         } finally {
             setIsTyping(false);
         }
@@ -1603,68 +2750,104 @@ export default function Chat({
             <Head title="AI Chat" />
 
             {/* Toast notifications */}
-            <div className="fixed right-6 top-20 z-50 flex w-80 flex-col gap-2">
+            <div className="fixed top-20 right-6 z-50 flex w-80 flex-col gap-2">
                 {toasts.map((toast) => (
-                    <Alert key={toast.id} variant={toast.type === 'error' ? 'destructive' : 'default'} className="border shadow-sm">
+                    <Alert
+                        key={toast.id}
+                        variant={
+                            toast.type === 'error' ? 'destructive' : 'default'
+                        }
+                        className="border shadow-sm"
+                    >
                         {toast.type === 'error' && <AlertCircle />}
-                        {toast.type === 'success' && <CheckCircle2 className="text-emerald-600" />}
-                        {toast.type === 'info' && <Sparkles className="text-violet-600" />}
+                        {toast.type === 'success' && (
+                            <CheckCircle2 className="text-emerald-600" />
+                        )}
+                        {toast.type === 'info' && (
+                            <Sparkles className="text-violet-600" />
+                        )}
                         <AlertTitle>{toast.title}</AlertTitle>
-                        {toast.description && <AlertDescription>{toast.description}</AlertDescription>}
+                        {toast.description && (
+                            <AlertDescription>
+                                {toast.description}
+                            </AlertDescription>
+                        )}
                     </Alert>
                 ))}
             </div>
 
             <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-1 overflow-hidden">
                 <Card className="relative h-full min-h-0 w-full gap-0 overflow-hidden rounded-none border-x-0 border-b-0 py-0">
-                    {contextUsage && (() => {
-                        const usage = Math.min(100, Math.max(0, contextUsage.context_used_pct));
-                        const barClass = usage >= 90
-                            ? 'bg-red-500'
-                            : usage >= 75
-                                ? 'bg-amber-500'
-                                : 'bg-emerald-500';
-                        const textClass = usage >= 90
-                            ? 'text-red-700'
-                            : usage >= 75
-                                ? 'text-amber-700'
-                                : 'text-emerald-700';
+                    {contextUsage &&
+                        (() => {
+                            const usage = Math.min(
+                                100,
+                                Math.max(0, contextUsage.context_used_pct),
+                            );
+                            const barClass =
+                                usage >= 90
+                                    ? 'bg-red-500'
+                                    : usage >= 75
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500';
+                            const textClass =
+                                usage >= 90
+                                    ? 'text-red-700'
+                                    : usage >= 75
+                                      ? 'text-amber-700'
+                                      : 'text-emerald-700';
 
-                        return (
-                            <div className="border-b border-slate-200 bg-white px-4 py-2 sm:px-6">
-                                <div className="mb-1.5 flex items-center justify-between text-xs">
-                                    <div className="inline-flex items-center gap-1.5 text-slate-700">
-                                        <Gauge className="h-3.5 w-3.5" />
-                                        <span className="font-medium">Context Window</span>
+                            return (
+                                <div className="border-b border-slate-200 bg-white px-4 py-2 sm:px-6">
+                                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                                        <div className="inline-flex items-center gap-1.5 text-slate-700">
+                                            <Gauge className="h-3.5 w-3.5" />
+                                            <span className="font-medium">
+                                                Context Window
+                                            </span>
+                                        </div>
+                                        <div
+                                            className={`font-semibold ${textClass}`}
+                                        >
+                                            {usage.toFixed(2)}%
+                                        </div>
                                     </div>
-                                    <div className={`font-semibold ${textClass}`}>
-                                        {usage.toFixed(2)}%
+                                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                        <div
+                                            className={`h-full transition-all duration-300 ${barClass}`}
+                                            style={{ width: `${usage}%` }}
+                                        />
+                                    </div>
+                                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-600">
+                                        <span>
+                                            Used:{' '}
+                                            {contextUsage.prompt_eval_count.toLocaleString()}{' '}
+                                            /{' '}
+                                            {contextUsage.context_window.toLocaleString()}{' '}
+                                            tokens
+                                        </span>
+                                        <span>
+                                            Left:{' '}
+                                            {contextUsage.context_remaining.toLocaleString()}
+                                        </span>
                                     </div>
                                 </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                                    <div
-                                        className={`h-full transition-all duration-300 ${barClass}`}
-                                        style={{ width: `${usage}%` }}
-                                    />
-                                </div>
-                                <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-600">
-                                    <span>Used: {contextUsage.prompt_eval_count.toLocaleString()} / {contextUsage.context_window.toLocaleString()} tokens</span>
-                                    <span>Left: {contextUsage.context_remaining.toLocaleString()}</span>
-                                </div>
-                            </div>
-                        );
-                    })()}
+                            );
+                        })()}
 
                     {/* Message list */}
                     <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-4 py-4 pb-40 sm:px-6">
                         {showEmptyState ? (
                             <div className="flex min-h-full flex-col items-center justify-center bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100/60 text-center">
-                                <p className="mb-2 text-sm text-slate-500">Orders management assistant</p>
+                                <p className="mb-2 text-sm text-slate-500">
+                                    Orders management assistant
+                                </p>
                                 <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
                                     How can I help you today?
                                 </h1>
                                 <p className="mt-3 text-sm text-slate-400">
-                                    Ask me to list, search, create, or update orders.
+                                    Ask me to list, search, create, or update
+                                    orders.
                                 </p>
                             </div>
                         ) : (
@@ -1672,86 +2855,188 @@ export default function Chat({
                                 {messages.map((message) => {
                                     const hasFinancialReportResult =
                                         message.role === 'assistant' &&
-                                        (message.toolResults ?? []).some((result) => result.type === 'financial_report');
+                                        (message.toolResults ?? []).some(
+                                            (result) =>
+                                                result.type ===
+                                                'financial_report',
+                                        );
+                                    const hasAgentActivity =
+                                        message.role === 'assistant' &&
+                                        ((message.activity ?? []).length > 0 ||
+                                            Boolean(message.thinking) ||
+                                            (message.toolCalls ?? []).length >
+                                                0);
 
                                     return (
                                         <div
                                             key={message.id}
-                                            className={message.role === 'user' ? 'ml-auto max-w-[80%]' : 'max-w-full'}
+                                            className={
+                                                message.role === 'user'
+                                                    ? 'ml-auto max-w-[80%]'
+                                                    : 'max-w-full'
+                                            }
                                         >
                                             {/* Avatar + name row */}
-                                            <div className={`mb-1 flex items-center gap-2 text-xs text-slate-500 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div
+                                                className={`mb-1 flex items-center gap-2 text-xs text-slate-500 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                            >
                                                 {message.role !== 'user' && (
                                                     <Avatar className="h-6 w-6">
-                                                        <AvatarFallback>AI</AvatarFallback>
+                                                        <AvatarFallback>
+                                                            AI
+                                                        </AvatarFallback>
                                                     </Avatar>
                                                 )}
-                                                <span>{message.role === 'user' ? 'You' : 'Assistant'} • now</span>
+                                                <span>
+                                                    {message.role === 'user'
+                                                        ? 'You'
+                                                        : 'Assistant'}{' '}
+                                                    • now
+                                                </span>
                                             </div>
 
                                             {/* Bubble */}
-                                            <div className={`rounded-xl border px-3 py-2 text-sm ${message.role === 'user' ? 'border-blue-100 bg-blue-50 text-slate-800' : 'border-slate-200 bg-white text-slate-800'}`}>
-
-                                                {/* Thinking collapsible — only shown after response is complete */}
-                                                {message.role === 'assistant' && message.thinking && !isTyping && (
+                                            <div
+                                                className={`rounded-xl border px-3 py-2 text-sm ${message.role === 'user' ? 'border-blue-100 bg-blue-50 text-slate-800' : 'border-slate-200 bg-white text-slate-800'}`}
+                                            >
+                                                {hasAgentActivity && (
                                                     <Collapsible
-                                                        open={Boolean(thinkingOpen[message.id])}
-                                                        onOpenChange={(open) => setThinkingOpen((prev) => ({ ...prev, [message.id]: open }))}
+                                                        open={Boolean(
+                                                            activityOpen[
+                                                                message.id
+                                                            ],
+                                                        )}
+                                                        onOpenChange={(open) =>
+                                                            setActivityOpen(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    [message.id]:
+                                                                        open,
+                                                                }),
+                                                            )
+                                                        }
                                                     >
-                                                        <CollapsibleTrigger asChild>
-                                                            <Button type="button" variant="ghost" size="sm" className="mb-2 h-7 px-2 text-xs text-slate-600">
-                                                                {thinkingOpen[message.id] ? 'Hide thinking' : 'Show thinking'}
-                                                                {thinkingOpen[message.id] ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
+                                                        <CollapsibleTrigger
+                                                            asChild
+                                                        >
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="mb-2 h-7 px-2 text-xs text-slate-600"
+                                                            >
+                                                                {activityOpen[
+                                                                    message.id
+                                                                ]
+                                                                    ? 'Hide agent activity'
+                                                                    : 'Show agent activity'}
+                                                                {activityOpen[
+                                                                    message.id
+                                                                ] ? (
+                                                                    <ChevronUp className="ml-1 h-3 w-3" />
+                                                                ) : (
+                                                                    <ChevronDown className="ml-1 h-3 w-3" />
+                                                                )}
                                                             </Button>
                                                         </CollapsibleTrigger>
-                                                        <CollapsibleContent className="mb-2 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
-                                                            <div className="max-h-56 space-y-1 overflow-y-auto">
-                                                                {renderRichText(message.thinking)}
-                                                            </div>
+                                                        <CollapsibleContent className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                                            {message.thinking && (
+                                                                <div className="mb-3 rounded-md border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
+                                                                    <p className="mb-1 font-semibold">
+                                                                        Thinking
+                                                                    </p>
+                                                                    <div className="max-h-40 overflow-y-auto">
+                                                                        {renderRichText(
+                                                                            message.thinking,
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            <AgentActivityTimeline
+                                                                items={
+                                                                    message.activity ??
+                                                                    []
+                                                                }
+                                                            />
                                                         </CollapsibleContent>
                                                     </Collapsible>
                                                 )}
 
                                                 {/* Tool calls in progress */}
-                                                {message.role === 'assistant' && (message.toolCalls ?? []).length > 0 && (
-                                                    <div className="mb-2 flex flex-wrap gap-1.5">
-                                                        {message.toolCalls!.map((tc, i) => (
-                                                            <ToolCallBadge key={i} toolCall={tc} />
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Tool results (tables, cards, etc.) */}
-                                                {message.role === 'assistant' && (message.toolResults ?? []).length > 0 && (
-                                                    <div className="mb-2">
-                                                    <ToolResultsView
-                                                        results={message.toolResults!}
-                                                        onViewOrder={setSelectedOrder}
-                                                        onConfirmTask={onConfirmTask}
-                                                        confirmingTaskId={confirmingTaskId}
-                                                    />
-                                                    {isTyping && message.id === activeAssistantId && !message.content && (
-                                                        <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
-                                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                                            <span>Analyzing results and drafting response...</span>
+                                                {message.role === 'assistant' &&
+                                                    (message.toolCalls ?? [])
+                                                        .length > 0 && (
+                                                        <div className="mb-2 flex flex-wrap gap-1.5">
+                                                            {message.toolCalls!.map(
+                                                                (tc, i) => (
+                                                                    <ToolCallBadge
+                                                                        key={i}
+                                                                        toolCall={
+                                                                            tc
+                                                                        }
+                                                                    />
+                                                                ),
+                                                            )}
                                                         </div>
                                                     )}
-                                                </div>
-                                            )}
+
+                                                {/* Tool results (tables, cards, etc.) */}
+                                                {message.role === 'assistant' &&
+                                                    (message.toolResults ?? [])
+                                                        .length > 0 && (
+                                                        <div className="mb-2">
+                                                            <ToolResultsView
+                                                                results={
+                                                                    message.toolResults!
+                                                                }
+                                                                onViewOrder={
+                                                                    setSelectedOrder
+                                                                }
+                                                                onConfirmTask={
+                                                                    onConfirmTask
+                                                                }
+                                                                confirmingTaskId={
+                                                                    confirmingTaskId
+                                                                }
+                                                            />
+                                                            {isTyping &&
+                                                                message.id ===
+                                                                    activeAssistantId &&
+                                                                !message.content && (
+                                                                    <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
+                                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                                        <span>
+                                                                            Analyzing
+                                                                            results
+                                                                            and
+                                                                            drafting
+                                                                            response...
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                        </div>
+                                                    )}
 
                                                 {/* Text content */}
                                                 {message.content && (
                                                     <div className="space-y-1">
                                                         {hasFinancialReportResult ? (
                                                             <p className="text-xs text-slate-500">
-                                                                Report details are shown in the structured table above.
+                                                                Report details
+                                                                are shown in the
+                                                                structured table
+                                                                above.
                                                             </p>
                                                         ) : (
                                                             <>
-                                                                {renderRichText(message.content)}
-                                                                {isTyping && message.id === activeAssistantId && (
-                                                                    <span className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-slate-400 align-middle" />
+                                                                {renderRichText(
+                                                                    message.content,
                                                                 )}
+                                                                {isTyping &&
+                                                                    message.id ===
+                                                                        activeAssistantId && (
+                                                                        <span className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-slate-400 align-middle" />
+                                                                    )}
                                                             </>
                                                         )}
                                                     </div>
@@ -1765,12 +3050,20 @@ export default function Chat({
                                 {waitingForFirstResponseToken && (
                                     <div className="flex justify-center pt-2">
                                         <div className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 shadow-sm">
-                                            <span className="inline-block animate-bounce text-base">🧠</span>
+                                            <span className="inline-block animate-bounce text-base">
+                                                🧠
+                                            </span>
                                             <span>Thinking</span>
                                             <span className="flex items-center">
-                                                <span className="animate-bounce [animation-delay:0ms]">.</span>
-                                                <span className="animate-bounce [animation-delay:150ms]">.</span>
-                                                <span className="animate-bounce [animation-delay:300ms]">.</span>
+                                                <span className="animate-bounce [animation-delay:0ms]">
+                                                    .
+                                                </span>
+                                                <span className="animate-bounce [animation-delay:150ms]">
+                                                    .
+                                                </span>
+                                                <span className="animate-bounce [animation-delay:300ms]">
+                                                    .
+                                                </span>
                                             </span>
                                         </div>
                                     </div>
@@ -1780,7 +3073,10 @@ export default function Chat({
                                     <div className="flex justify-center pt-2">
                                         <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700 shadow-sm">
                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            <span>Still thinking through the table results...</span>
+                                            <span>
+                                                Still thinking through the table
+                                                results...
+                                            </span>
                                         </div>
                                     </div>
                                 )}
@@ -1789,7 +3085,10 @@ export default function Chat({
                     </div>
 
                     {/* Input form */}
-                    <form onSubmit={onSubmit} className="fixed inset-x-0 bottom-4 z-40 px-4">
+                    <form
+                        onSubmit={onSubmit}
+                        className="fixed inset-x-0 bottom-4 z-40 px-4"
+                    >
                         <div className="mx-auto w-full max-w-4xl rounded-2xl border bg-white/95 shadow-lg backdrop-blur">
                             <CardContent className="pt-3">
                                 <Input
@@ -1802,14 +3101,45 @@ export default function Chat({
                             </CardContent>
                             <CardFooter className="justify-between py-2">
                                 <div className="flex items-center gap-2">
-                                    <Button type="button" variant="ghost" size="icon"><Paperclip className="h-4 w-4" /></Button>
-                                    <Button type="button" variant="ghost" size="icon"><Smile className="h-4 w-4" /></Button>
-                                    <Badge variant="secondary" className="gap-1"><Link className="h-3 w-3" />Orders DB</Badge>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                    >
+                                        <Paperclip className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                    >
+                                        <Smile className="h-4 w-4" />
+                                    </Button>
+                                    <Badge
+                                        variant="secondary"
+                                        className="gap-1"
+                                    >
+                                        <Link className="h-3 w-3" />
+                                        Orders DB
+                                    </Badge>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Button type="button" variant="outline" size="sm" className="hidden sm:inline-flex"><Plus className="h-4 w-4" /></Button>
-                                    <Button type="submit" size="sm" disabled={!canSend} className="gap-1">
-                                        Send <SendHorizontal className="h-4 w-4" />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="hidden sm:inline-flex"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        disabled={!canSend}
+                                        className="gap-1"
+                                    >
+                                        Send{' '}
+                                        <SendHorizontal className="h-4 w-4" />
                                     </Button>
                                 </div>
                             </CardFooter>

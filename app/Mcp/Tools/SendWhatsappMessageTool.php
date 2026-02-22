@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Services\Whatsapp\WhatsappMessageSender;
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -18,6 +18,7 @@ class SendWhatsappMessageTool extends Tool
         return [
             'to' => $schema->string()->description('Recipient phone number, e.g. +2547...'),
             'message' => $schema->string()->description('Message body to send'),
+            'confirmed' => $schema->boolean()->nullable()->description('Explicit confirmation for high-risk action'),
         ];
     }
 
@@ -28,6 +29,7 @@ class SendWhatsappMessageTool extends Tool
         $validator = Validator::make($args, [
             'to' => ['required', 'string', 'min:8'],
             'message' => ['required', 'string', 'min:1', 'max:4096'],
+            'confirmed' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {

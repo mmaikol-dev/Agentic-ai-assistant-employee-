@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Models\SheetOrder;
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

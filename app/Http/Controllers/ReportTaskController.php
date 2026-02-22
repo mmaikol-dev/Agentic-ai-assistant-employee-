@@ -10,7 +10,7 @@ class ReportTaskController extends Controller
 {
     public function show(string $taskId, ReportTaskService $service): JsonResponse
     {
-        $task = $service->get($taskId);
+        $task = $service->get($taskId, (int) auth()->id());
         if ($task === null) {
             return response()->json(['message' => 'Task not found.'], 404);
         }
@@ -24,7 +24,7 @@ class ReportTaskController extends Controller
 
     public function confirm(Request $request, string $taskId, ReportTaskService $service): JsonResponse
     {
-        $task = $service->confirm($taskId);
+        $task = $service->confirm($taskId, (int) $request->user()->id);
         if ($task === null) {
             return response()->json(['message' => 'Task not found.'], 404);
         }

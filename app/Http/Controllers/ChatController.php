@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ChatMessageRequest;
+use App\Services\AgentMemoryService;
 use App\Services\ChatMemoryService;
 use App\Services\OllamaSkillLoader;
 use Illuminate\Http\Client\ConnectionException;
@@ -17,7 +18,8 @@ class ChatController extends Controller
 {
     public function __construct(
         private readonly OllamaSkillLoader $skillLoader,
-        private readonly ChatMemoryService $chatMemory
+        private readonly ChatMemoryService $chatMemory,
+        private readonly AgentMemoryService $memoryService,
     ) {}
 
     /**
@@ -62,7 +64,7 @@ class ChatController extends Controller
             ], 500)->header('X-Conversation-Id', $conversation->id);
         }
 
-        $messages = $this->prependSystemMessage($messages);
+        $messages = $this->prependSystemMessage($messages, (int) $request->user()->id);
 
         try {
             $response = Http::baseUrl((string) config('services.ollama.base_url'))
@@ -160,6 +162,16 @@ class ChatController extends Controller
                 'context_usage' => $contextUsage,
             ]
         );
+        $this->memoryService->storeEpisode(
+            userId: (int) $request->user()->id,
+            scope: 'conversation',
+            memoryKey: 'chat_exchange',
+            content: "User: {$latestUserMessage}\nAssistant: ".Str::limit($content, 600),
+            metadata: [
+                'conversation_id' => (string) $conversation->id,
+                'trace_id' => $traceId,
+            ],
+        );
 
         Log::info('Chat store request completed', [
             'trace_id' => $traceId,
@@ -222,7 +234,7 @@ class ChatController extends Controller
             ]);
         }
 
-        $messages = $this->prependSystemMessage($messages);
+        $messages = $this->prependSystemMessage($messages, (int) $request->user()->id);
 
         return response()->stream(function () use ($model, $messages, $traceId, $conversation, $latestUserMessage): void {
             $runner = new \App\Services\OllamaToolRunner(
@@ -261,6 +273,16 @@ class ChatController extends Controller
                         'context_usage' => $latestContextUsage,
                     ]
                 );
+                $this->memoryService->storeEpisode(
+                    userId: (int) $conversation->user_id,
+                    scope: 'conversation',
+                    memoryKey: 'chat_exchange',
+                    content: "User: {$latestUserMessage}\nAssistant: ".Str::limit($assistantMessage, 600),
+                    metadata: [
+                        'conversation_id' => (string) $conversation->id,
+                        'trace_id' => $traceId,
+                    ],
+                );
             }
         }, 200, [
             ...$this->streamHeaders(),
@@ -282,7 +304,7 @@ class ChatController extends Controller
      * @param array<int, array<string, mixed>> $messages
      * @return array<int, array<string, mixed>>
      */
-    private function prependSystemMessage(array $messages): array
+    private function prependSystemMessage(array $messages, int $userId): array
     {
         $basePrompt = (string) config('services.ollama.system_prompt', '');
         $skillsSection = (string) config('services.ollama.skills_section', '');
@@ -312,12 +334,22 @@ Never fabricate task IDs, counts, task history tables, or placeholder links.
 Only mention links and task IDs returned by successful tool results.
 TXT;
         }
+        $memoryDirective = null;
+        $memoryItems = $this->memoryService->retrieveRelevant($userId, $latestUserText, 4);
+        if ($memoryItems !== []) {
+            $memoryLines = collect($memoryItems)
+                ->map(fn (array $item): string => '- ['.(string) ($item['scope'] ?? 'general').'] '.(string) ($item['content'] ?? ''))
+                ->implode("\n");
+
+            $memoryDirective = "## Relevant Long-Term Memory\n".$memoryLines;
+        }
 
         $parts = array_filter([
             trim($basePrompt),
             trim($skillsSection),
             trim((string) $activeSkill),
             trim((string) $taskIntentDirective),
+            trim((string) $memoryDirective),
         ]);
 
         if ($parts === []) {

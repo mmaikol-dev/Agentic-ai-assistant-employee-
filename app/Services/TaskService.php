@@ -7,6 +7,7 @@ use App\Models\Task;
 use App\Models\TaskLog;
 use App\Models\TaskRun;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -139,7 +140,7 @@ class TaskService
         $task->update(['status' => 'failed']);
     }
 
-    public function getNextCronRun(string $cron, string $timezone): Carbon
+    public function getNextCronRun(string $cron, string $timezone): CarbonInterface
     {
         if (class_exists(\Cron\CronExpression::class)) {
             $expression = \Cron\CronExpression::factory($cron);
@@ -152,7 +153,7 @@ class TaskService
         return now($timezone)->addDay();
     }
 
-    private function normalizeRunAt(mixed $value, string $timezone): ?Carbon
+    private function normalizeRunAt(mixed $value, string $timezone): ?CarbonInterface
     {
         if (! is_string($value) || trim($value) === '') {
             return null;
@@ -166,11 +167,11 @@ class TaskService
     }
 
     private function adjustOneTimeRunAtForRelativeIntent(
-        ?Carbon $runAt,
+        ?CarbonInterface $runAt,
         string $scheduleType,
         string $timezone,
         mixed $originalUserRequest,
-    ): ?Carbon {
+    ): ?CarbonInterface {
         if ($scheduleType !== 'one_time' || $runAt === null || ! is_string($originalUserRequest)) {
             return $runAt;
         }
@@ -211,7 +212,7 @@ class TaskService
         return $runAt;
     }
 
-    private function validateSchedule(string $scheduleType, ?Carbon $runAt, string $timezone): void
+    private function validateSchedule(string $scheduleType, ?CarbonInterface $runAt, string $timezone): void
     {
         if ($scheduleType !== 'one_time') {
             return;
@@ -247,10 +248,10 @@ class TaskService
 
     private function initialNextRunAt(
         string $scheduleType,
-        ?Carbon $runAt,
+        ?CarbonInterface $runAt,
         mixed $cronExpression,
         string $timezone,
-    ): ?Carbon
+    ): ?CarbonInterface
     {
         if ($scheduleType === 'one_time') {
             return $runAt;

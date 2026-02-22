@@ -20,7 +20,7 @@ class ReportTaskService
      * @param array<int, array{merchant: string, start_date?: string|null, end_date?: string|null}> $merchants
      * @return array<string, mixed>
      */
-    public function create(array $merchants): array
+    public function create(array $merchants, int $userId): array
     {
         $id = (string) Str::uuid();
         $merchantItems = [];
@@ -75,6 +75,7 @@ class ReportTaskService
 
         $task = [
             'id' => $id,
+            'user_id' => $userId,
             'type' => 'report_delivery_workflow',
             'status' => 'waiting_confirmation',
             'current_step' => 'confirm_delivery',
@@ -105,7 +106,7 @@ class ReportTaskService
     /**
      * @return array<string, mixed>|null
      */
-    public function get(string $id): ?array
+    public function get(string $id, ?int $userId = null): ?array
     {
         $path = $this->path($id);
         if (! File::exists($path)) {
@@ -113,15 +114,23 @@ class ReportTaskService
         }
 
         $decoded = json_decode((string) File::get($path), true);
-        return is_array($decoded) ? $decoded : null;
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        if ($userId !== null && (int) ($decoded['user_id'] ?? 0) !== $userId) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    public function confirm(string $id): ?array
+    public function confirm(string $id, ?int $userId = null): ?array
     {
-        $task = $this->get($id);
+        $task = $this->get($id, $userId);
         if ($task === null) {
             return null;
         }

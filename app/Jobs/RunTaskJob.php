@@ -36,6 +36,7 @@ class RunTaskJob implements ShouldQueue
         try {
             $executionPlan = is_array($task->execution_plan) ? $task->execution_plan : [];
             $results = [];
+            $hasFailures = false;
             $runner = new OllamaToolRunner(
                 (string) config('services.ollama.model'),
                 (string) \Illuminate\Support\Str::uuid(),
@@ -66,10 +67,17 @@ class RunTaskJob implements ShouldQueue
                 if ($tool !== '') {
                     $toolResult = $runner->callTool($tool, $input);
                     $results[(string) $stepNumber] = $toolResult;
+                    $resultType = (string) ($toolResult['type'] ?? 'unknown');
+                    $stepStatus = in_array($resultType, ['error', 'policy_blocked'], true)
+                        ? 'failed'
+                        : 'completed';
+                    if ($stepStatus === 'failed') {
+                        $hasFailures = true;
+                    }
 
                     $taskService->logStep($task, $run, [
                         'step' => $stepNumber,
-                        'status' => 'completed',
+                        'status' => $stepStatus,
                         'observation' => 'OBSERVATION: '.json_encode($toolResult),
                         'tool_used' => $tool,
                         'tool_input' => $input,
@@ -88,6 +96,11 @@ class RunTaskJob implements ShouldQueue
                     'status' => 'completed',
                     'observation' => 'OBSERVATION: Step completed without tool invocation.',
                 ]);
+            }
+
+            if ($hasFailures) {
+                $taskService->failRun($task, $run, 'One or more task steps failed or were blocked by policy.');
+                return;
             }
 
             $summary = trim((string) ($task->expected_output ?? 'Task completed.'));

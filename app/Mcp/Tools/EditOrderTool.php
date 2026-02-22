@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Models\SheetOrder;
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tool;
@@ -51,7 +51,7 @@ class EditOrderTool extends Tool
             return $response->error('Order not found.');
         }
 
-        $order->update(collect($args)->except(['id', 'order_no'])->toArray());
+        $order->update(collect($args)->except(['id', 'order_no', 'confirmed'])->toArray());
 
         return $response->text(json_encode([
             'type'    => 'order_updated',

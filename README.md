@@ -8,6 +8,9 @@ A Laravel + Inertia React application that provides an **agentic AI assistant** 
 - Chat UI at `/chat`.
 - Supports standard response mode and streaming mode (`/chat/stream`).
 - Persists conversation context per authenticated user.
+- Injects relevant long-term memory snippets (episodic + semantic lexical retrieval) into the system context before execution.
+- Loads conversation history in the existing app sidebar and opens a thread only when that session is clicked.
+- Prevents accidental cross-session mixing by starting a new conversation when no `conversation_id` is selected.
 - Tracks context-window usage from model responses.
 
 ### 2. Tool Calling Over Business Data
@@ -22,6 +25,14 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - `send_whatsapp_message`: send outbound WhatsApp messages
 - `setup_integration`: scaffold WhatsApp provider integrations
 - `scaffold_mcp_tool`: generate new MCP tool boilerplate
+- Runtime tool registry discovers MCP tools dynamically and exposes them to the model without hardcoding.
+
+### 2.1 Autonomous Agent Runtime (New)
+- **Hard safety/policy layer**: risk-classifies tools and blocks high-risk actions unless explicitly confirmed (`confirmed=true`).
+- **Planner pass before execution**: generates a structured plan (goal, steps, dependencies, success criteria, risk tags) and injects it into the run context.
+- **Execution orchestrator**: wraps tool calls with retries, backoff, simple alternative-argument strategy, and escalation when unrecoverable.
+- **Critic loop**: evaluates tool outputs (delivery, reporting plausibility, task creation integrity) and feeds critique telemetry back into the stream.
+- **Long-term memory service**: stores tool outcomes and conversation episodes for future retrieval.
 
 ### 3. Financial Reporting
 - Export endpoint: `/reports/financial/export`
@@ -32,6 +43,7 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - Creates task files for multi-step merchant workflows.
 - Step confirmation endpoint updates order statuses and agent remittance state.
 - Provides per-merchant report download links when completed.
+- Report-task ownership is now bound to authenticated `user_id` and enforced on read/confirm.
 
 ### 5. WhatsApp Messaging
 - Send custom chat messages (`/whatsapp/send-chat`).
@@ -43,6 +55,8 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - Create and monitor assistant-created tasks at `/tasks`.
 - Supports `immediate`, `one_time`, `recurring`, and `event_triggered` task types.
 - One-time tasks are validated server-side: `run_at` must be a valid **future** datetime.
+- Relative one-time schedule intent (for example "today at 12:20pm") is normalized defensively:
+  if parsed time is already in the past, the backend shifts to the next valid occurrence.
 - Task list now includes status filters for `scheduled`, `queued`, `running`, `completed`, and `failed`.
 - `scheduled` maps to queued/pending tasks so future jobs are visible before execution.
 
@@ -120,6 +134,7 @@ Open: `http://127.0.0.1:8000`
 
 ```env
 APP_URL=http://127.0.0.1:8000
+APP_TIMEZONE=UTC
 
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=your-model-name
@@ -132,6 +147,8 @@ WHATSAPP_PROVIDER=meta|twilio|africastalking|custom
 ## Notes
 
 - Use a single host consistently (`127.0.0.1` **or** `localhost`) to avoid CSRF/session issues.
+- Set `APP_TIMEZONE` to your operational timezone (for example `Africa/Nairobi`) so task scheduling and "today/tomorrow" interpretations are correct.
+- After changing timezone/config values, run `php artisan optimize:clear`.
 - If MySQL is unavailable in local development, use file-based session/cache drivers.
 - Delayed tasks require a healthy DB queue + active worker (`php artisan queue:work`).
 - Some domain tables/models (orders, whatsapp, etc.) depend on your existing DB schema and data.

@@ -2,6 +2,20 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\GetBudgetTransactionRecordTool;
+use App\Mcp\Tools\ListBudgetTransactionRecordsTool;
+use App\Mcp\Tools\GetWhatsappRecordTool;
+use App\Mcp\Tools\ListWhatsappRecordsTool;
+use App\Mcp\Tools\GetSheetRecordTool;
+use App\Mcp\Tools\ListSheetRecordsTool;
+use App\Mcp\Tools\GetUserRecordTool;
+use App\Mcp\Tools\ListUserRecordsTool;
+use App\Mcp\Tools\GetProductRecordTool;
+use App\Mcp\Tools\ListProductRecordsTool;
+use App\Mcp\Tools\WarehouseManagerTool;
+use App\Mcp\Tools\ShippingTrackerTool;
+use App\Mcp\Tools\InventoryManagerTool;
+use App\Mcp\Tools\ModelSchemaWorkspaceTool;
 use App\Mcp\Tools\SendGridEmailTool;
 use App\Mcp\Tools\SendEmailTool;
 use App\Mcp\Tools\SendWhatsappMessageTool;
@@ -20,6 +34,20 @@ class OrdersServer extends Server
     protected string $instructions = 'Manages the sheet_orders table. Use tools to create, edit, list and query orders.';
 
     protected array $tools = [
+        GetBudgetTransactionRecordTool::class,
+        ListBudgetTransactionRecordsTool::class,
+        GetWhatsappRecordTool::class,
+        ListWhatsappRecordsTool::class,
+        GetSheetRecordTool::class,
+        ListSheetRecordsTool::class,
+        GetUserRecordTool::class,
+        ListUserRecordsTool::class,
+        GetProductRecordTool::class,
+        ListProductRecordsTool::class,
+        WarehouseManagerTool::class,
+        ShippingTrackerTool::class,
+        InventoryManagerTool::class,
+        ModelSchemaWorkspaceTool::class,
         SendEmailTool::class,
         SendGridEmailTool::class,
         SendWhatsappMessageTool::class,

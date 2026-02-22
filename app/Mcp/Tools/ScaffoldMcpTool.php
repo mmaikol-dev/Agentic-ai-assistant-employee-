@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools;
 
-use Illuminate\JsonSchema\JsonSchema;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
@@ -191,7 +191,7 @@ class ScaffoldMcpTool extends Tool
 
 namespace App\Mcp\Tools;
 
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -248,7 +248,7 @@ PHP;
 
 namespace App\Mcp\Tools;
 
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
 use Laravel\\Mcp\\Server\\Tool;
@@ -292,7 +292,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -376,7 +376,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
@@ -445,7 +445,7 @@ PHP;
 namespace App\Mcp\Tools;
 
 use App\\Models\\SheetOrder;
-use Illuminate\\JsonSchema\\JsonSchema;
+use Illuminate\\Contracts\\JsonSchema\\JsonSchema;
 use Illuminate\\Support\\Facades\\Validator;
 use Laravel\\Mcp\\Request;
 use Laravel\\Mcp\\Response;
