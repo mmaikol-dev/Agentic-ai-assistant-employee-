@@ -2,8 +2,6 @@ import { Head } from '@inertiajs/react';
 import {
     AlertCircle,
     CheckCircle2,
-    ChevronDown,
-    ChevronUp,
     ChevronLeft,
     ChevronRight,
     Download,
@@ -28,11 +26,6 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
     Dialog,
     DialogContent,
@@ -322,6 +315,13 @@ const TOOL_META: Record<
     },
 };
 
+const THINKING_PLACEHOLDER_TEXTS = new Set([
+    'Thinking...',
+    'Planning the best steps...',
+    'Executing tools...',
+    'Request received. Preparing response...',
+]);
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getCsrfToken(): string {
@@ -418,6 +418,10 @@ function splitHeuristicThinking(
         thinking:
             `${thinkingText}\n${answerText.slice(0, match.index).trim()}`.trim(),
     };
+}
+
+function isThinkingPlaceholderContent(content: string): boolean {
+    return THINKING_PLACEHOLDER_TEXTS.has(content.trim());
 }
 
 function isTaskPayload(value: unknown): value is TaskPayload {
@@ -874,45 +878,75 @@ function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
 function AgentActivityTimeline({ items }: { items: AgentActivityItem[] }) {
     if (items.length === 0) return null;
 
+    const [visibleCount, setVisibleCount] = useState(
+        Math.min(1, items.length),
+    );
+
+    useEffect(() => {
+        if (items.length < visibleCount) {
+            setVisibleCount(items.length);
+            return;
+        }
+
+        if (items.length <= visibleCount) return;
+
+        const timer = window.setTimeout(() => {
+            setVisibleCount((prev) => Math.min(items.length, prev + 1));
+        }, 130);
+
+        return () => window.clearTimeout(timer);
+    }, [items.length, visibleCount]);
+
+    const visibleItems = items.slice(0, visibleCount);
+
+    const iconFor = (item: AgentActivityItem): ReactNode => {
+        if (item.state === 'running') {
+            return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+        }
+        if (item.state === 'failed') {
+            return <AlertCircle className="h-3.5 w-3.5" />;
+        }
+
+        if (item.kind === 'tool_call') {
+            return <Wrench className="h-3.5 w-3.5" />;
+        }
+        if (item.kind === 'status' || item.kind === 'note') {
+            return <Sparkles className="h-3.5 w-3.5" />;
+        }
+
+        return <CheckCircle2 className="h-3.5 w-3.5" />;
+    };
+
     return (
-        <div className="space-y-2">
-            {items.map((item) => {
-                const isRunning = item.state === 'running';
-                const isFailed = item.state === 'failed';
-                const badgeClass = isFailed
-                    ? 'border-red-200 bg-red-50 text-red-700'
-                    : isRunning
-                      ? 'border-blue-200 bg-blue-50 text-blue-700'
-                      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
-                return (
-                    <div key={item.id} className="flex gap-2">
-                        <div className="mt-1 flex flex-col items-center">
-                            <span
-                                className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${badgeClass}`}
-                            >
-                                {isRunning ? (
-                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                ) : isFailed ? (
-                                    <AlertCircle className="h-2.5 w-2.5" />
-                                ) : (
-                                    <CheckCircle2 className="h-2.5 w-2.5" />
-                                )}
-                            </span>
-                            <span className="mt-1 h-full min-h-2 w-px bg-slate-200" />
-                        </div>
-                        <div className="min-w-0 flex-1 pb-2">
-                            <p className="text-xs font-medium text-slate-800">
+        <div className="overflow-x-auto pb-1">
+            <div className="inline-flex min-w-max items-center gap-2">
+                {visibleItems.map((item) => {
+                    const isRunning = item.state === 'running';
+                    const isFailed = item.state === 'failed';
+                    const chipClass = isFailed
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : isRunning
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+
+                    return (
+                        <div
+                            key={item.id}
+                            title={
+                                item.detail
+                                    ? `${item.title}\n${item.detail}`
+                                    : item.title
+                            }
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${chipClass}`}
+                        >
+                            {iconFor(item)}
+                            <span className="max-w-[180px] truncate">
                                 {item.title}
-                            </p>
-                            {item.detail && (
-                                <p className="mt-0.5 text-[11px] whitespace-pre-wrap text-slate-600">
-                                    {item.detail}
-                                </p>
-                            )}
+                            </span>
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -1981,9 +2015,6 @@ export default function Chat({
         initialConversationId,
     );
     const [toasts, setToasts] = useState<Toast[]>([]);
-    const [activityOpen, setActivityOpen] = useState<Record<string, boolean>>(
-        {},
-    );
     const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
     const [confirmingTaskId, setConfirmingTaskId] = useState<string | null>(
         null,
@@ -2309,32 +2340,9 @@ export default function Chat({
                 if (animatorRunning) return;
                 animatorRunning = true;
                 while (pendingAnswerChars.length > 0) {
-                    const queueLength = pendingAnswerChars.length;
-                    const batchSize = receivedToolResult
-                        ? queueLength > 1200
-                            ? 30
-                            : queueLength > 600
-                              ? 18
-                              : queueLength > 250
-                                ? 10
-                                : 4
-                        : queueLength > 1500
-                          ? 120
-                          : queueLength > 800
-                            ? 64
-                            : queueLength > 300
-                              ? 24
-                              : 6;
-                    consumeDelta(pendingAnswerChars.slice(0, batchSize));
-                    pendingAnswerChars = pendingAnswerChars.slice(batchSize);
-                    const delay = receivedToolResult
-                        ? queueLength > 600
-                            ? 10
-                            : 16
-                        : queueLength > 600
-                          ? 0
-                          : 8;
-                    await sleep(delay);
+                    consumeDelta(pendingAnswerChars);
+                    pendingAnswerChars = '';
+                    await Promise.resolve();
                 }
                 animatorRunning = false;
             };
@@ -2373,12 +2381,7 @@ export default function Chat({
                             const phase = String(
                                 event['phase'] ?? '',
                             ).toLowerCase();
-                            const statusText =
-                                phase === 'planning'
-                                    ? 'Planning the best steps...'
-                                    : phase === 'executing'
-                                      ? 'Executing tools...'
-                                      : '';
+                            const statusText = '';
                             const phaseLabel =
                                 phase === 'planning'
                                     ? 'Planning'
@@ -2900,66 +2903,35 @@ export default function Chat({
                                                 className={`rounded-xl border px-3 py-2 text-sm ${message.role === 'user' ? 'border-blue-100 bg-blue-50 text-slate-800' : 'border-slate-200 bg-white text-slate-800'}`}
                                             >
                                                 {hasAgentActivity && (
-                                                    <Collapsible
-                                                        open={Boolean(
-                                                            activityOpen[
-                                                                message.id
-                                                            ],
-                                                        )}
-                                                        onOpenChange={(open) =>
-                                                            setActivityOpen(
-                                                                (prev) => ({
-                                                                    ...prev,
-                                                                    [message.id]:
-                                                                        open,
-                                                                }),
-                                                            )
-                                                        }
-                                                    >
-                                                        <CollapsibleTrigger
-                                                            asChild
-                                                        >
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="mb-2 h-7 px-2 text-xs text-slate-600"
-                                                            >
-                                                                {activityOpen[
-                                                                    message.id
-                                                                ]
-                                                                    ? 'Hide agent activity'
-                                                                    : 'Show agent activity'}
-                                                                {activityOpen[
-                                                                    message.id
-                                                                ] ? (
-                                                                    <ChevronUp className="ml-1 h-3 w-3" />
-                                                                ) : (
-                                                                    <ChevronDown className="ml-1 h-3 w-3" />
-                                                                )}
-                                                            </Button>
-                                                        </CollapsibleTrigger>
-                                                        <CollapsibleContent className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                                            {message.thinking && (
-                                                                <div className="mb-3 rounded-md border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
-                                                                    <p className="mb-1 font-semibold">
-                                                                        Thinking
-                                                                    </p>
-                                                                    <div className="max-h-40 overflow-y-auto">
-                                                                        {renderRichText(
-                                                                            message.thinking,
-                                                                        )}
-                                                                    </div>
+                                                    <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                                        {isTyping &&
+                                                            message.id ===
+                                                                activeAssistantId && (
+                                                                <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700">
+                                                                    <span className="inline-block animate-bounce text-base">
+                                                                        🧠
+                                                                    </span>
                                                                 </div>
                                                             )}
-                                                            <AgentActivityTimeline
-                                                                items={
-                                                                    message.activity ??
-                                                                    []
-                                                                }
-                                                            />
-                                                        </CollapsibleContent>
-                                                    </Collapsible>
+                                                        {message.thinking && (
+                                                            <div className="mb-3 rounded-md border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
+                                                                <p className="mb-1 font-semibold">
+                                                                    Thinking
+                                                                </p>
+                                                                <div className="max-h-40 overflow-y-auto">
+                                                                    {renderRichText(
+                                                                        message.thinking,
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <AgentActivityTimeline
+                                                            items={
+                                                                message.activity ??
+                                                                []
+                                                            }
+                                                        />
+                                                    </div>
                                                 )}
 
                                                 {/* Tool calls in progress */}
@@ -3003,14 +2975,9 @@ export default function Chat({
                                                                 message.id ===
                                                                     activeAssistantId &&
                                                                 !message.content && (
-                                                                    <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
-                                                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                                                        <span>
-                                                                            Analyzing
-                                                                            results
-                                                                            and
-                                                                            drafting
-                                                                            response...
+                                                                    <div className="mt-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
+                                                                        <span className="inline-block animate-bounce text-base">
+                                                                            🧠
                                                                         </span>
                                                                     </div>
                                                                 )}
@@ -3018,7 +2985,10 @@ export default function Chat({
                                                     )}
 
                                                 {/* Text content */}
-                                                {message.content && (
+                                                {message.content &&
+                                                    !isThinkingPlaceholderContent(
+                                                        message.content,
+                                                    ) && (
                                                     <div className="space-y-1">
                                                         {hasFinancialReportResult ? (
                                                             <p className="text-xs text-slate-500">
@@ -3049,21 +3019,9 @@ export default function Chat({
                                 {/* Typing / waiting indicator */}
                                 {waitingForFirstResponseToken && (
                                     <div className="flex justify-center pt-2">
-                                        <div className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 shadow-sm">
+                                        <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 shadow-sm">
                                             <span className="inline-block animate-bounce text-base">
                                                 🧠
-                                            </span>
-                                            <span>Thinking</span>
-                                            <span className="flex items-center">
-                                                <span className="animate-bounce [animation-delay:0ms]">
-                                                    .
-                                                </span>
-                                                <span className="animate-bounce [animation-delay:150ms]">
-                                                    .
-                                                </span>
-                                                <span className="animate-bounce [animation-delay:300ms]">
-                                                    .
-                                                </span>
                                             </span>
                                         </div>
                                     </div>
@@ -3071,11 +3029,9 @@ export default function Chat({
 
                                 {waitingForPostToolNarration && (
                                     <div className="flex justify-center pt-2">
-                                        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700 shadow-sm">
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            <span>
-                                                Still thinking through the table
-                                                results...
+                                        <div className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700 shadow-sm">
+                                            <span className="inline-block animate-bounce text-base">
+                                                🧠
                                             </span>
                                         </div>
                                     </div>

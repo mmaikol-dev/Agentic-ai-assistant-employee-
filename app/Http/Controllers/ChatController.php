@@ -237,6 +237,16 @@ class ChatController extends Controller
         $messages = $this->prependSystemMessage($messages, (int) $request->user()->id);
 
         return response()->stream(function () use ($model, $messages, $traceId, $conversation, $latestUserMessage): void {
+            echo json_encode([
+                'type' => 'status',
+                'phase' => 'started',
+                'note' => 'Request received. Preparing response...',
+            ])."\n";
+            // Helps some proxy/CDN buffers flush early on shared hosting.
+            echo str_repeat(' ', 2048)."\n";
+            @ob_flush();
+            flush();
+
             $runner = new \App\Services\OllamaToolRunner(
                 $model,
                 $traceId,

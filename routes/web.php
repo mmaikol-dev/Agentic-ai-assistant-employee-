@@ -19,7 +19,7 @@ Route::get('/', function () {
 })->name('home');
 
 Route::get('dashboard', function () {
-    return Inertia::render('dashboard');
+    return redirect()->route('chat');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::get('chat', function (Request $request) {

@@ -376,14 +376,16 @@ class OllamaToolRunner
         $executedToolNames = [];
         $successfulToolResults = [];
         $toolOutcomeSummary = [];
-        $emit('status', ['phase' => 'planning']);
-        $plan = $this->planner->buildPlan($messages, $this->tools, $this->model, $this->baseUrl, $this->timeout);
+        if ($this->shouldRunPlanning($latestUserPrompt)) {
+            $emit('status', ['phase' => 'planning']);
+            $plan = $this->planner->buildPlan($messages, $this->tools, $this->model, $this->baseUrl, $this->timeout);
 
-        $emit('plan', ['plan' => $plan]);
-        $messages[] = [
-            'role' => 'system',
-            'content' => $this->renderPlanDirective($plan),
-        ];
+            $emit('plan', ['plan' => $plan]);
+            $messages[] = [
+                'role' => 'system',
+                'content' => $this->renderPlanDirective($plan),
+            ];
+        }
 
         Log::info('Ollama tool runner started', [
             'trace_id' => $this->traceId,
@@ -919,6 +921,57 @@ class OllamaToolRunner
         }
 
         return '';
+    }
+
+    private function shouldRunPlanning(string $latestUserPrompt): bool
+    {
+        if (! (bool) config('services.ollama.enable_planner', true)) {
+            return false;
+        }
+
+        $prompt = trim($latestUserPrompt);
+        if ($prompt === '') {
+            return false;
+        }
+
+        $lower = Str::lower($prompt);
+
+        // Fast-path for lightweight conversational turns (e.g., "hey", "hi there").
+        if (preg_match('/^(hi|hey|hello|yo|sup|how are you|good (morning|afternoon|evening))[\s!.?]*$/i', $prompt) === 1) {
+            return false;
+        }
+
+        if (str_word_count($prompt) <= 3) {
+            $operationalHints = [
+                'order',
+                'report',
+                'task',
+                'create',
+                'update',
+                'edit',
+                'list',
+                'find',
+                'search',
+                'monthly',
+                'daily',
+                'status',
+                'inventory',
+                'whatsapp',
+                'email',
+                'export',
+                'schedule',
+            ];
+
+            foreach ($operationalHints as $hint) {
+                if (str_contains($lower, $hint)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     private function inferRequestDomain(string $prompt): ?string
