@@ -48,6 +48,8 @@ return [
         'base_url' => env('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
         'model' => env('OLLAMA_MODEL', ''),
         'timeout' => (int) env('OLLAMA_TIMEOUT', 120),
+        'embedding_model' => env('OLLAMA_EMBEDDING_MODEL', ''),
+        'embedding_timeout' => (int) env('OLLAMA_EMBEDDING_TIMEOUT', 20),
         'enable_planner' => (bool) env('OLLAMA_ENABLE_PLANNER', true),
         'planner_timeout' => (int) env('OLLAMA_PLANNER_TIMEOUT', 12),
         'enable_dynamic_tools' => (bool) env('OLLAMA_ENABLE_DYNAMIC_TOOLS', true),

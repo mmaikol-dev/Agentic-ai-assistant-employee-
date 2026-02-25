@@ -2317,19 +2317,6 @@ export default function Chat({
         [messages.length, isTyping],
     );
 
-    const latestAssistantQuestion = useMemo(() => {
-        if (isTyping) return null;
-
-        const latestAssistant = [...messages]
-            .reverse()
-            .find((message) => message.role === 'assistant');
-        if (!latestAssistant?.content) {
-            return null;
-        }
-
-        return extractQuestionText(latestAssistant.content);
-    }, [messages, isTyping]);
-
     const latestAssistantMessage = useMemo(() => {
         return (
             [...messages]
@@ -3469,15 +3456,6 @@ export default function Chat({
                         className="fixed inset-x-0 bottom-4 z-40 px-4"
                     >
                         <div className="mx-auto w-full max-w-4xl">
-                            {latestAssistantQuestion && (
-                                <div className="mb-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900 shadow-sm">
-                                    <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                                        Assistant Question
-                                    </p>
-                                    <p>{latestAssistantQuestion}</p>
-                                </div>
-                            )}
-
                             {reportPickerOpen && (
                                 <div className="mb-2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
                                     <p className="text-sm font-semibold text-slate-900">
