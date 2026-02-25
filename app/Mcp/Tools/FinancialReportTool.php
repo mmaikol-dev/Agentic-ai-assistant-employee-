@@ -11,7 +11,7 @@ use Laravel\Mcp\Server\Tool;
 
 class FinancialReportTool extends Tool
 {
-    protected string $description = 'Generates a financial report for delivered + remitted orders grouped by merchant, including total revenue, order count, and average order value. All filters are optional.';
+    protected string $description = 'Generates a financial report for delivered orders where remittance is tracked in agent (remitted/remittted), grouped by merchant, including total revenue, order count, and average order value. All filters are optional.';
 
     public function schema(JsonSchema $schema): array
     {
@@ -42,12 +42,14 @@ class FinancialReportTool extends Tool
             return $response->error($validator->errors()->first());
         }
 
-        // Base query: delivered + remitted (including common "remittted" typo)
+        // Base query: delivered orders with remittance tracked in agent column.
         $query = SheetOrder::query()
-            ->whereIn('status', ['delivered', 'remitted', 'remittted']);
+            ->whereRaw('LOWER(TRIM(status)) = ?', ['delivered']);
 
-        if (!empty($args['agent'])) {
+        if (! empty($args['agent'])) {
             $query->where('agent', 'like', '%' . $args['agent'] . '%');
+        } else {
+            $query->whereRaw('LOWER(TRIM(agent)) in (?, ?)', ['remitted', 'remittted']);
         }
         if (!empty($args['merchant'])) {
             $query->where('merchant', 'like', '%' . $args['merchant'] . '%');
@@ -71,7 +73,7 @@ class FinancialReportTool extends Tool
             return $response->text(json_encode([
                 'type'    => 'financial_report',
                 'empty'   => true,
-                'message' => 'No delivered or remitted orders matched the specified filters.',
+                'message' => 'No delivered orders with remitted/remittted agent matched the specified filters.',
                 'filters' => $this->appliedFilters($args),
             ]));
         }

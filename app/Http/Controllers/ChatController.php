@@ -235,6 +235,13 @@ class ChatController extends Controller
         }
 
         $messages = $this->prependSystemMessage($messages, (int) $request->user()->id);
+        if ($request->hasSession()) {
+            // Release the session lock so the user can still navigate during long streams.
+            $request->session()->save();
+            if (\function_exists('session_write_close')) {
+                @\session_write_close();
+            }
+        }
 
         return response()->stream(function () use ($model, $messages, $traceId, $conversation, $latestUserMessage): void {
             echo json_encode([

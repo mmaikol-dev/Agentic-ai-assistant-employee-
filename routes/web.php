@@ -3,7 +3,9 @@
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\FinancialReportExportController;
 use App\Http\Controllers\ReportTaskController;
+use App\Http\Controllers\SkillsController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\ToolsController;
 use App\Http\Controllers\WhatsappController;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
@@ -94,6 +96,10 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('tasks/{task}/cancel', [TaskController::class, 'cancel'])->name('tasks.cancel');
     Route::post('tasks/{task}/retry', [TaskController::class, 'retry'])->name('tasks.retry');
     Route::get('tasks/{task}/stream', [TaskController::class, 'stream'])->name('tasks.stream');
+    Route::get('skills', [SkillsController::class, 'index'])->name('skills.index');
+    Route::post('skills/update', [SkillsController::class, 'update'])->name('skills.update');
+    Route::get('tools', [ToolsController::class, 'index'])->name('tools.index');
+    Route::post('tools/update', [ToolsController::class, 'update'])->name('tools.update');
 });
 
 require __DIR__.'/settings.php';

@@ -48,7 +48,7 @@ export function NavConversationHistory() {
                                 isActive={currentUrl === href}
                                 tooltip={{ children: session.title }}
                             >
-                                <Link href={href} prefetch>
+                                <Link href={href}>
                                     <MessageSquareText />
                                     <span className="min-w-0 leading-tight">
                                         <span className="block truncate text-xs font-medium">

@@ -58,7 +58,8 @@ You can answer questions conversationally and create background tasks that run a
 
 Tools:
 - list_orders, get_order, create_order, edit_order
-- financial_report
+- financial_report, merchant_report
+- call_center_daily_report, call_center_monthly_report
 - create_report_task, get_report_task_status
 - send_whatsapp_message, setup_integration, scaffold_mcp_tool
 - model_schema_workspace
@@ -99,6 +100,7 @@ OUTPUT FORMAT RULES:
 - Whenever listing 2 or more items (orders, products, tasks, reports, errors, steps, or any records), always render the list as a markdown table.
 - Include clear column headers and one row per item.
 - If there are no rows, state "No results found." and do not fabricate table rows.
+- When asking the user to choose between options, include a concise question and an explicit `Options:` line with comma-separated values.
 
 create_task payload requirements:
 - title, description
@@ -131,9 +133,20 @@ TXT),
 - Never claim a write succeeded without tool confirmation.
 
 ### Financial Reporting Skill
-- Use `financial_report` for revenue, product, city, and period analysis.
+- Use `financial_report` for overall financial analysis across delivered/remitted orders.
 - Prefer report output over manual calculations.
 - When report data is available, guide user to the Excel download button.
+
+### Merchant Reporting Skill
+- Use `merchant_report` for merchant performance analysis.
+- Prefer `merchant_report` when the user asks for merchant-level ranking, merchant contribution, or top merchant trends.
+- `merchant_report` requires an explicit `status` filter; ask one concise clarification question when status is missing.
+- Keep financial and merchant reporting separate: use `financial_report` for overall financial scope and `merchant_report` for merchant-focused scope.
+
+### Call Center Reporting Skill
+- Use `call_center_daily_report` for daily call center summaries.
+- Use `call_center_monthly_report` for monthly call center summaries and status grouping.
+- Do not substitute call center tools with `financial_report` or `merchant_report`.
 
 ### Product Inventory Skill
 - For requests about product count, stock levels, quantity on hand, or inventory totals, do NOT use `financial_report`.
@@ -162,6 +175,7 @@ TXT),
 ## Response Formatting Rules
 - For any response that lists multiple items, always use a markdown table with explicit headers.
 - Apply table output consistently for tool results, summaries, and status lists.
+- For any clarification that requires choosing one option, include an explicit `Options:` line so the UI can render selectable choices.
 TXT),
     ],
 

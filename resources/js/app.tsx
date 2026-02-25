@@ -7,6 +7,24 @@ import { initializeTheme } from './hooks/use-appearance';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
+async function cleanupStaleServiceWorkers(): Promise<void> {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+        return;
+    }
+
+    try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+
+        if ('caches' in window) {
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+        }
+    } catch (error) {
+        console.warn('Service worker cleanup failed:', error);
+    }
+}
+
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     resolve: (name) =>
@@ -30,3 +48,4 @@ createInertiaApp({
 
 // This will set light / dark mode on load...
 initializeTheme();
+void cleanupStaleServiceWorkers();

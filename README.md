@@ -19,7 +19,10 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - `get_order`: fetch a specific order by id/order number
 - `create_order`: create a new order
 - `edit_order`: update existing order fields
-- `financial_report`: compute revenue/order summaries and breakdowns
+- `financial_report`: compute overall revenue/order summaries and breakdowns
+- `merchant_report`: compute merchant-focused performance summaries and rankings
+- `call_center_daily_report`: call center daily summary for scheduled/delivered coded orders
+- `call_center_monthly_report`: call center monthly summary with status grouping
 - `create_report_task`: start a multi-merchant report workflow
 - `get_report_task_status`: inspect workflow progress
 - `send_whatsapp_message`: send outbound WhatsApp messages
@@ -39,24 +42,35 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - **Empty-final-response summary fallback**: when tools succeed but the model emits no final text, the runner synthesizes a concise result summary instead of a generic placeholder line.
 - **Generic tabular UI rendering**: the chat UI now auto-renders table-like tool results from any array-of-object payload, reducing per-tool frontend work for newly generated tools.
 
-### 3. Financial Reporting
+### 3. Reporting Types (Separated)
+- **Financial Report** (`financial_report` + `/reports/financial/export`)
+  - Global financial scope over delivered/remitted orders.
+  - Supports merchant/country/city/agent/date filters.
+- **Merchant Report** (`merchant_report`)
+  - Merchant-focused performance report (merchant ranking, shares, top products) with explicit status filtering.
+  - Keeps merchant analysis separate from global financial summary.
+- **Call Center Reports** (`call_center_daily_report`, `call_center_monthly_report`)
+  - Daily and monthly call-center-specific reporting.
+  - Kept separate from financial and merchant reporting tools.
+
+### 4. Financial Reporting Export
 - Export endpoint: `/reports/financial/export`
 - Supports filters: merchant, country, city, agent, start/end date, date field.
 - Downloads XLSX (when Laravel Excel is available) or CSV fallback.
 
-### 4. Report Workflow Automation
+### 5. Report Workflow Automation
 - Creates task files for multi-step merchant workflows.
 - Step confirmation endpoint updates order statuses and agent remittance state.
 - Provides per-merchant report download links when completed.
 - Report-task ownership is now bound to authenticated `user_id` and enforced on read/confirm.
 
-### 5. WhatsApp Messaging
+### 6. WhatsApp Messaging
 - Send custom chat messages (`/whatsapp/send-chat`).
 - Send templated order message by order id (`/whatsapp/send-message/{id}`).
 - Receive inbound/status webhooks (`/whatsapp/webhook`).
 - Provider abstraction supports Meta, Twilio, Africa's Talking, and custom APIs.
 
-### 6. Background Task Scheduling
+### 7. Background Task Scheduling
 - Create and monitor assistant-created tasks at `/tasks`.
 - Supports `immediate`, `one_time`, `recurring`, and `event_triggered` task types.
 - One-time tasks are validated server-side: `run_at` must be a valid **future** datetime.
@@ -65,7 +79,7 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - Task list now includes status filters for `scheduled`, `queued`, `running`, `completed`, and `failed`.
 - `scheduled` maps to queued/pending tasks so future jobs are visible before execution.
 
-### 7. Auth + Security Features
+### 8. Auth + Security Features
 - Laravel Fortify auth flows.
 - Email verification and optional two-factor auth settings.
 - Authenticated/verified route protection for core app features.

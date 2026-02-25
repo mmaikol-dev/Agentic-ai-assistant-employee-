@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Bot, Folder, ListChecks } from 'lucide-react';
+import { BookOpen, Bot, FileCode, Folder, ListChecks, Wrench } from 'lucide-react';
 import { NavConversationHistory } from '@/components/nav-conversation-history';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -28,6 +28,16 @@ const mainNavItems: NavItem[] = [
         href: '/tasks',
         icon: ListChecks,
     },
+    {
+        title: 'Skills',
+        href: '/skills',
+        icon: Wrench,
+    },
+    {
+        title: 'Tools',
+        href: '/tools',
+        icon: FileCode,
+    },
 ];
 
 const footerNavItems: NavItem[] = [
@@ -50,7 +60,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={chat()} prefetch>
+                            <Link href={chat()}>
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>

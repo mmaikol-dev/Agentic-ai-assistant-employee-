@@ -14,6 +14,7 @@ use App\Mcp\Tools\GetUserRecordTool;
 use App\Mcp\Tools\ListUserRecordsTool;
 use App\Mcp\Tools\GetProductRecordTool;
 use App\Mcp\Tools\ListProductRecordsTool;
+use App\Mcp\Tools\MerchantReportTool;
 use App\Mcp\Tools\WarehouseManagerTool;
 use App\Mcp\Tools\ShippingTrackerTool;
 use App\Mcp\Tools\InventoryManagerTool;
@@ -56,6 +57,7 @@ class OrdersServer extends Server
         SendGridEmailTool::class,
         SendWhatsappMessageTool::class,
         FinancialReportTool::class,
+        MerchantReportTool::class,
         ListOrdersTool::class,
         GetOrderTool::class,
         CreateOrderTool::class,

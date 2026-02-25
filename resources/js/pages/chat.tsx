@@ -1,7 +1,8 @@
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import {
     AlertCircle,
     CheckCircle2,
+    X,
     ChevronLeft,
     ChevronRight,
     Download,
@@ -9,6 +10,7 @@ import {
     Loader2,
     Paperclip,
     Plus,
+    Square,
     SendHorizontal,
     Smile,
     Sparkles,
@@ -19,7 +21,7 @@ import {
     Package,
     Gauge,
 } from 'lucide-react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -237,6 +239,8 @@ type AutoTableData = {
     perPage?: number;
 };
 
+type ReportTypeOption = 'financial' | 'merchant' | 'call_center';
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'AI Chat', href: '/chat' }];
@@ -424,6 +428,50 @@ function isThinkingPlaceholderContent(content: string): boolean {
     return THINKING_PLACEHOLDER_TEXTS.has(content.trim());
 }
 
+function extractQuestionText(content: string): string | null {
+    const normalized = content.replace(/\s+/g, ' ').trim();
+    if (!normalized || !normalized.includes('?')) {
+        return null;
+    }
+
+    const lower = normalized.toLowerCase();
+    const clarificationSignals = [
+        'please clarify',
+        'clarify',
+        'i need',
+        'need a',
+        'need the',
+        'missing',
+        'required',
+        'to proceed',
+        'could you',
+        'can you',
+        'would you',
+        'which',
+        'what is',
+        'what should',
+        'confirm',
+        'not sure',
+        'unsure',
+    ];
+    const isClarification = clarificationSignals.some((signal) =>
+        lower.includes(signal),
+    );
+    if (!isClarification) {
+        return null;
+    }
+
+    const parts = normalized
+        .split(/(?<=\?)/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+    const lastQuestion = [...parts]
+        .reverse()
+        .find((part) => part.includes('?'));
+
+    return lastQuestion ?? null;
+}
+
 function isTaskPayload(value: unknown): value is TaskPayload {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -437,6 +485,197 @@ function isTaskPayload(value: unknown): value is TaskPayload {
             data.schedule_type,
         )
     );
+}
+
+function detectSpecificReportType(prompt: string): ReportTypeOption | null {
+    const text = prompt.toLowerCase();
+
+    if (/(call[\s-]?center|call center|cc report)/i.test(text)) {
+        return 'call_center';
+    }
+    if (/\bmerchant\b/i.test(text)) {
+        return 'merchant';
+    }
+    if (/(financial|finance|revenue|profit|sales)/i.test(text)) {
+        return 'financial';
+    }
+
+    return null;
+}
+
+function shouldPromptForReportType(prompt: string): boolean {
+    const text = prompt.trim().toLowerCase();
+    if (text === '') return false;
+
+    const hasReportIntent = /\breport(s|ing)?\b/.test(text);
+    if (!hasReportIntent) return false;
+
+    return detectSpecificReportType(text) === null;
+}
+
+function buildReportSelectionPrompt(
+    originalPrompt: string,
+    reportType: ReportTypeOption,
+    enhancement = '',
+): string {
+    const instruction =
+        reportType === 'financial'
+            ? 'Selected report type: financial report. Use financial_report.'
+            : reportType === 'merchant'
+              ? 'Selected report type: merchant report. Use merchant_report.'
+              : 'Selected report type: call center report. Use call_center_daily_report or call_center_monthly_report based on requested period.';
+
+    const extra = enhancement.trim();
+    if (extra === '') {
+        return `${originalPrompt}\n\n${instruction}`;
+    }
+
+    return `${originalPrompt}\n\n${instruction}\nAdditional user preference: ${extra}`;
+}
+
+const DEFAULT_STATUS_OPTIONS = [
+    'delivered',
+    'scheduled',
+    'pending',
+    'cancelled',
+    'processing',
+    'shipped',
+];
+
+function normalizeOptionText(value: string): string {
+    return value
+        .trim()
+        .replace(/^["'`]+|["'`]+$/g, '')
+        .replace(/[.,;:!?]+$/, '')
+        .trim();
+}
+
+function isViableOptionText(value: string): boolean {
+    const text = normalizeOptionText(value);
+    if (text === '') return false;
+    if (text.length > 80) return false;
+    if (/[?]/.test(text)) return false;
+    if (/\b(and optionally|choose one option|popup closes)\b/i.test(text)) {
+        return false;
+    }
+
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount > 10) return false;
+
+    return true;
+}
+
+function uniqueOptions(values: string[]): string[] {
+    const seen = new Set<string>();
+    const options: string[] = [];
+
+    for (const value of values) {
+        const option = normalizeOptionText(value);
+        if (!isViableOptionText(option)) continue;
+        const key = option.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push(option);
+    }
+
+    return options;
+}
+
+function extractOptionsFromAssistantContent(content: string): string[] {
+    const lines = content
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+    const options: string[] = [];
+
+    for (const line of lines) {
+        const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+        if (bulletMatch?.[1]) {
+            options.push(bulletMatch[1]);
+            continue;
+        }
+
+        const numberedMatch = line.match(/^\d+\.\s+(.+)$/);
+        if (numberedMatch?.[1]) {
+            options.push(numberedMatch[1]);
+            continue;
+        }
+    }
+
+    if (options.length >= 2) {
+        return uniqueOptions(options);
+    }
+
+    const inlineMatch = content.match(
+        /\b(?:options?|choose from|select from)\s*[:\-]\s*([^\n]+)/i,
+    );
+    if (inlineMatch?.[1]) {
+        const inline = inlineMatch[1]
+            .split(',')
+            .map((part) => part.trim());
+        const parsed = uniqueOptions(inline);
+        if (parsed.length >= 2) return parsed;
+    }
+
+    return [];
+}
+
+function optionsFromToolResults(results: ToolResult[] | undefined): string[] {
+    if (!results || results.length === 0) return [];
+    const keyCandidates = [
+        'provider_options',
+        'options',
+        'choices',
+        'status_options',
+        'available_options',
+    ];
+
+    for (let i = results.length - 1; i >= 0; i -= 1) {
+        const item = results[i];
+        if (!isRecordObject(item)) continue;
+
+        for (const key of keyCandidates) {
+            const value = (item as Record<string, unknown>)[key];
+            if (!Array.isArray(value)) continue;
+            const opts = uniqueOptions(
+                value.filter((v): v is string => typeof v === 'string'),
+            );
+            if (opts.length >= 2) return opts;
+        }
+    }
+
+    return [];
+}
+
+function deriveAssistantChoice(
+    message: ChatMessage | null,
+): { question: string; options: string[] } | null {
+    if (!message || message.role !== 'assistant') return null;
+
+    const question =
+        extractQuestionText(message.content) ??
+        ((message.toolResults ?? []).find(
+            (result) =>
+                result.type === 'integration_requirements' &&
+                Array.isArray(result.questions) &&
+                result.questions.length > 0,
+        ) as Extract<ToolResult, { type: 'integration_requirements' }> | undefined)
+            ?.questions?.[0] ??
+        null;
+
+    if (!question) return null;
+
+    let options = optionsFromToolResults(message.toolResults);
+    if (options.length < 2) {
+        options = extractOptionsFromAssistantContent(message.content);
+    }
+    if (options.length < 2 && /\bstatus\b/i.test(question)) {
+        options = DEFAULT_STATUS_OPTIONS;
+    }
+
+    if (options.length < 2) return null;
+
+    return { question, options };
 }
 
 function shortJson(value: unknown): string {
@@ -2020,6 +2259,21 @@ export default function Chat({
         null,
     );
     const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+    const [reportPickerOpen, setReportPickerOpen] = useState(false);
+    const [pendingReportPrompt, setPendingReportPrompt] = useState<
+        string | null
+    >(null);
+    const [reportCustomInput, setReportCustomInput] = useState('');
+    const [assistantOptionPicker, setAssistantOptionPicker] = useState<{
+        question: string;
+        options: string[];
+        sourceMessageId: string;
+    } | null>(null);
+    const [assistantOptionCustomInput, setAssistantOptionCustomInput] =
+        useState('');
+    const [isStopping, setIsStopping] = useState(false);
+    const [abortController, setAbortController] =
+        useState<AbortController | null>(null);
 
     const canSend = useMemo(
         () => input.trim().length > 0 && !isTyping,
@@ -2063,10 +2317,72 @@ export default function Chat({
         [messages.length, isTyping],
     );
 
+    const latestAssistantQuestion = useMemo(() => {
+        if (isTyping) return null;
+
+        const latestAssistant = [...messages]
+            .reverse()
+            .find((message) => message.role === 'assistant');
+        if (!latestAssistant?.content) {
+            return null;
+        }
+
+        return extractQuestionText(latestAssistant.content);
+    }, [messages, isTyping]);
+
+    const latestAssistantMessage = useMemo(() => {
+        return (
+            [...messages]
+                .reverse()
+                .find((message) => message.role === 'assistant') ?? null
+        );
+    }, [messages]);
+
+    useEffect(() => {
+        if (isTyping || reportPickerOpen) {
+            setAssistantOptionPicker(null);
+            return;
+        }
+
+        const choice = deriveAssistantChoice(latestAssistantMessage);
+        if (!choice || !latestAssistantMessage) {
+            setAssistantOptionPicker(null);
+            return;
+        }
+
+        setAssistantOptionPicker((previous) => {
+            if (previous?.sourceMessageId === latestAssistantMessage.id) {
+                return previous;
+            }
+
+            return {
+                ...choice,
+                sourceMessageId: latestAssistantMessage.id,
+            };
+        });
+        setAssistantOptionCustomInput('');
+    }, [isTyping, reportPickerOpen, latestAssistantMessage]);
+
     useEffect(() => {
         setMessages(initialMessages);
         setConversationId(initialConversationId);
     }, [initialConversationId, initialMessages]);
+
+    useEffect(() => {
+        return () => {
+            abortController?.abort();
+        };
+    }, [abortController]);
+
+    useEffect(() => {
+        return router.on('before', () => {
+            if (!isTyping || !abortController) {
+                return;
+            }
+            setIsStopping(true);
+            abortController.abort();
+        });
+    }, [abortController, isTyping]);
 
     const pushToast = (toast: Omit<Toast, 'id'>) => {
         const id = `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -2162,9 +2478,7 @@ export default function Chat({
         }
     };
 
-    const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const prompt = input.trim();
+    const submitPrompt = async (prompt: string) => {
         if (!prompt || isTyping) return;
 
         const userMessage: ChatMessage = {
@@ -2190,8 +2504,11 @@ export default function Chat({
         setMessages(nextMessages);
         setInput('');
         setIsTyping(true);
+        setIsStopping(false);
 
         try {
+            const controller = new AbortController();
+            setAbortController(controller);
             const xsrfToken = getXsrfTokenFromCookie();
             const csrfToken = getCsrfToken();
             const csrfHeaders: Record<string, string> = xsrfToken
@@ -2211,6 +2528,7 @@ export default function Chat({
             const response = await fetch('/chat/stream', {
                 method: 'POST',
                 credentials: 'same-origin',
+                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/x-ndjson',
@@ -2258,6 +2576,9 @@ export default function Chat({
                 'order_created',
                 'order_updated',
                 'financial_report',
+                'merchant_report',
+                'call_center_daily_report',
+                'call_center_monthly_report',
                 'integration_requirements',
                 'integration_setup',
                 'whatsapp_message_sent',
@@ -2728,6 +3049,25 @@ export default function Chat({
                 description: 'Streaming finished successfully.',
             });
         } catch (requestError) {
+            const wasAborted =
+                requestError instanceof DOMException &&
+                requestError.name === 'AbortError';
+            if (wasAborted) {
+                updateAssistantField(assistantId, (m) => ({
+                    content:
+                        m.content.trim().length > 0
+                            ? m.content
+                            : 'Response stopped.',
+                    thinking: '',
+                }));
+                pushToast({
+                    type: 'info',
+                    title: 'Response stopped',
+                    description: 'Generation was canceled.',
+                });
+                return;
+            }
+
             pushToast({
                 type: 'error',
                 title: 'Request failed',
@@ -2745,7 +3085,90 @@ export default function Chat({
             }));
         } finally {
             setIsTyping(false);
+            setIsStopping(false);
+            setAbortController(null);
         }
+    };
+
+    const submitCurrentInput = async () => {
+        const prompt = input.trim();
+        if (!prompt || isTyping) return;
+
+        if (shouldPromptForReportType(prompt)) {
+            setPendingReportPrompt(prompt);
+            setReportCustomInput('');
+            setReportPickerOpen(true);
+            return;
+        }
+
+        await submitPrompt(prompt);
+    };
+
+    const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        await submitCurrentInput();
+    };
+
+    const onTextareaKeyDown = async (
+        event: KeyboardEvent<HTMLTextAreaElement>,
+    ) => {
+        if ((event.nativeEvent as { isComposing?: boolean }).isComposing) {
+            return;
+        }
+        if (event.key !== 'Enter') return;
+        if (event.shiftKey) return;
+
+        event.preventDefault();
+        await submitCurrentInput();
+    };
+
+    const onStopResponse = () => {
+        if (!isTyping || !abortController) return;
+        setIsStopping(true);
+        abortController.abort();
+    };
+
+    const onSelectReportType = async (reportType: ReportTypeOption) => {
+        if (!pendingReportPrompt || isTyping) return;
+
+        const refinedPrompt = buildReportSelectionPrompt(
+            pendingReportPrompt,
+            reportType,
+            reportCustomInput,
+        );
+
+        setReportPickerOpen(false);
+        setPendingReportPrompt(null);
+        setReportCustomInput('');
+        await submitPrompt(refinedPrompt);
+    };
+
+    const onSubmitCustomReport = async () => {
+        const custom = reportCustomInput.trim();
+        if (!pendingReportPrompt || isTyping || custom === '') return;
+
+        const refinedPrompt = `${pendingReportPrompt}\n\nSelected report type: custom.\nCustom report request: ${custom}`;
+        setReportPickerOpen(false);
+        setPendingReportPrompt(null);
+        setReportCustomInput('');
+        await submitPrompt(refinedPrompt);
+    };
+
+    const onSelectAssistantOption = async (option: string) => {
+        const selected = option.trim();
+        if (!assistantOptionPicker || isTyping || selected === '') return;
+
+        setAssistantOptionCustomInput('');
+        await submitPrompt(
+            `For your question "${assistantOptionPicker.question}", I choose: ${selected}. Proceed with this option.`,
+        );
+    };
+
+    const onSubmitCustomAssistantOption = async () => {
+        const custom = assistantOptionCustomInput.trim();
+        if (!assistantOptionPicker || isTyping || custom === '') return;
+
+        await onSelectAssistantOption(custom);
     };
 
     return (
@@ -3045,14 +3468,192 @@ export default function Chat({
                         onSubmit={onSubmit}
                         className="fixed inset-x-0 bottom-4 z-40 px-4"
                     >
-                        <div className="mx-auto w-full max-w-4xl rounded-2xl border bg-white/95 shadow-lg backdrop-blur">
+                        <div className="mx-auto w-full max-w-4xl">
+                            {latestAssistantQuestion && (
+                                <div className="mb-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900 shadow-sm">
+                                    <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                                        Assistant Question
+                                    </p>
+                                    <p>{latestAssistantQuestion}</p>
+                                </div>
+                            )}
+
+                            {reportPickerOpen && (
+                                <div className="mb-2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                                    <p className="text-sm font-semibold text-slate-900">
+                                        Select report type
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-slate-600">
+                                        Choose one option. Popup closes and AI
+                                        continues automatically.
+                                    </p>
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                                        <Button
+                                            type="button"
+                                            onClick={() =>
+                                                void onSelectReportType(
+                                                    'financial',
+                                                )
+                                            }
+                                            className="justify-center"
+                                        >
+                                            Financial
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() =>
+                                                void onSelectReportType(
+                                                    'merchant',
+                                                )
+                                            }
+                                            className="justify-center"
+                                        >
+                                            Merchant
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() =>
+                                                void onSelectReportType(
+                                                    'call_center',
+                                                )
+                                            }
+                                            className="justify-center"
+                                        >
+                                            Call Center
+                                        </Button>
+                                    </div>
+
+                                    <div className="mt-3 border-t border-slate-200 pt-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                                            Other / refine
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-slate-600">
+                                            Type your own report direction, or
+                                            enhance one of the options above.
+                                        </p>
+                                        <Input
+                                            value={reportCustomInput}
+                                            onChange={(event) =>
+                                                setReportCustomInput(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="e.g. Weekly merchant report for Nairobi with instruction analysis"
+                                            className="mt-2 h-10"
+                                        />
+                                        <div className="mt-2 flex justify-end">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                disabled={
+                                                    reportCustomInput.trim() ===
+                                                    ''
+                                                }
+                                                onClick={() =>
+                                                    void onSubmitCustomReport()
+                                                }
+                                            >
+                                                Use Custom Request
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {assistantOptionPicker && (
+                                <div className="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                                    <div className="mb-1 flex items-start justify-between gap-2">
+                                        <p className="text-sm font-semibold text-slate-900">
+                                            {assistantOptionPicker.question}
+                                        </p>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 shrink-0"
+                                            onClick={() => {
+                                                setAssistantOptionPicker(null);
+                                                setAssistantOptionCustomInput('');
+                                            }}
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <p className="mt-0.5 text-xs text-slate-600">
+                                        Choose one option. Popup closes and AI
+                                        continues automatically.
+                                    </p>
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                        {assistantOptionPicker.options.map(
+                                            (option, index) => (
+                                                <Button
+                                                    key={`${option}-${index}`}
+                                                    type="button"
+                                                    variant={
+                                                        index === 0
+                                                            ? 'default'
+                                                            : 'outline'
+                                                    }
+                                                    onClick={() =>
+                                                        void onSelectAssistantOption(
+                                                            option,
+                                                        )
+                                                    }
+                                                    className="h-auto min-h-10 justify-start text-left whitespace-normal break-words"
+                                                >
+                                                    {option}
+                                                </Button>
+                                            ),
+                                        )}
+                                    </div>
+
+                                    <div className="mt-3 border-t border-slate-200 pt-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                                            Other option
+                                        </p>
+                                        <Input
+                                            value={assistantOptionCustomInput}
+                                            onChange={(event) =>
+                                                setAssistantOptionCustomInput(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Type your option"
+                                            className="mt-2 h-10"
+                                        />
+                                        <div className="mt-2 flex justify-end">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                disabled={
+                                                    assistantOptionCustomInput.trim() ===
+                                                    ''
+                                                }
+                                                onClick={() =>
+                                                    void onSubmitCustomAssistantOption()
+                                                }
+                                            >
+                                                Use Custom Option
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="rounded-2xl border bg-white/95 shadow-lg backdrop-blur">
                             <CardContent className="pt-3">
-                                <Input
+                                <textarea
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(event) =>
+                                        void onTextareaKeyDown(event)
+                                    }
                                     placeholder="Ask about orders, or say 'create an order for…'"
                                     autoComplete="off"
-                                    className="h-11"
+                                    rows={3}
+                                    className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
                                 />
                             </CardContent>
                             <CardFooter className="justify-between py-2">
@@ -3088,17 +3689,31 @@ export default function Chat({
                                     >
                                         <Plus className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                        type="submit"
-                                        size="sm"
-                                        disabled={!canSend}
-                                        className="gap-1"
-                                    >
-                                        Send{' '}
-                                        <SendHorizontal className="h-4 w-4" />
-                                    </Button>
+                                    {isTyping ? (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={onStopResponse}
+                                            disabled={isStopping}
+                                            className="gap-1"
+                                        >
+                                            Stop <Square className="h-4 w-4" />
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={!canSend}
+                                            className="gap-1"
+                                        >
+                                            Send{' '}
+                                            <SendHorizontal className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                 </div>
                             </CardFooter>
+                            </div>
                         </div>
                     </form>
                 </Card>
@@ -3113,6 +3728,7 @@ export default function Chat({
                     }
                 }}
             />
+
         </AppLayout>
     );
 }

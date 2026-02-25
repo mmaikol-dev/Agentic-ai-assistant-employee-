@@ -1,16 +1,20 @@
 ---
 name: financial-reporting
-description: Generate financial analysis reports for delivered + remitted orders using the financial_report tool, with breakdowns by merchant, country, and city.
-triggers: report, financial, revenue, analysis, breakdown, profit, excel, export, orders, merchant, sales, remitted, delivered
+description: Generate financial analysis reports for delivered orders where remittance is tracked in the agent column (remitted/remittted), using the financial_report tool, with breakdowns by merchant, country, and city.
+triggers: financial report, financial analysis, revenue report, sales report, overall revenue, profitability, delivered remitted report
 ---
 
 # Financial Reporting Skill
 
-Use this skill when the user asks for financial summaries, revenue breakdowns, merchant performance, geographic analysis, or any report over delivered + remitted orders.
+Use this skill when the user asks for overall financial summaries, revenue breakdowns, geographic analysis, or any global report over delivered orders that are remitted in the agent column.
 
 ## What the Tool Does
 
-`financial_report` queries `sheet_orders` for rows with status `delivered`, `remitted`, or `remittted` (common typo included), applies optional filters, and returns:
+`financial_report` queries `sheet_orders` for rows where:
+- `status = delivered`
+- `agent` is `remitted` or `remittted` (common typo included), unless agent filter is explicitly provided
+
+Then it applies optional filters and returns:
 
 - **`summary`** — top-line totals: `total_orders`, `total_revenue`, `average_order_value`, `merchant_count`, `top_merchant`, `top_merchant_revenue`
 - **`by_merchant`** — array sorted by `total_revenue` desc, each with: `merchant`, `order_count`, `total_revenue`, `average_order_value`, `revenue_share_pct`
@@ -32,7 +36,7 @@ Use this skill when the user asks for financial summaries, revenue breakdowns, m
 ## Workflow
 
 ### 1. Clarify Before Calling (only if truly ambiguous)
-If the user gives enough context, call immediately. If the request is vague about scope (e.g. "give me a report" with no time or merchant hint), call with no filters — the tool defaults to all delivered + remitted orders.
+If the user gives enough context, call immediately. If the request is vague about scope (e.g. "give me a report" with no time or merchant hint), call with no filters — the tool defaults to all delivered orders with remitted agent.
 
 **Do not over-ask.** One clarification at most.
 
@@ -73,7 +77,7 @@ Task behavior:
 ### 3. Handle the Response
 
 #### If `empty: true`
-- Tell the user clearly: no delivered/remitted orders matched their filters
+- Tell the user clearly: no delivered orders with remitted agent matched their filters
 - Echo back which filters were applied
 - Suggest relaxing filters (widen date range, remove city, check spelling)
 - Do not speculate or fabricate numbers

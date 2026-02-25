@@ -1,7 +1,7 @@
 ---
 name: call-center-daily-report
 description: Generate a daily call center report showing orders with status 'scheduled' or 'delivered' that have a code value assigned. Lists order_no, client_name, status, code, city, and cc_email.
-triggers: call-center-daily-report, call center daily report, call_center_daily_report
+triggers: call-center-daily-report, call center daily report, call_center_daily_report, daily call center, call center today
 ---
 
 # CallCenterDailyReportTool Skill

@@ -16,4 +16,4 @@ Use this skill when the user asks for data or operations related to the `budget_
 ## Output style
 - Keep the response short.
 - Show exact totals when available.
-- Mention filters used when summarizing counts.
+- Mention filters used when summarizing counts..

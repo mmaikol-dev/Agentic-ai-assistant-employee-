@@ -72,6 +72,13 @@ class TaskController extends Controller
     public function stream(Request $request, Task $task): StreamedResponse
     {
         abort_unless((int) $task->user_id === (int) $request->user()->id, 403);
+        if ($request->hasSession()) {
+            // Release the session lock so other authenticated page requests are not blocked.
+            $request->session()->save();
+            if (\function_exists('session_write_close')) {
+                @\session_write_close();
+            }
+        }
 
         return response()->stream(function () use ($task): void {
             $cursorTime = now()->subSecond();
