@@ -2,6 +2,17 @@
 
 namespace App\Mcp\Servers;
 
+<<<<<<< ours
+use App\Mcp\Tools\UserReportTool;
+use App\Mcp\Tools\GetCategoryRecordTool;
+use App\Mcp\Tools\ListCategoryRecordsTool;
+use App\Mcp\Tools\UpdateRequisitionRecordTool;
+use App\Mcp\Tools\CreateRequisitionRecordTool;
+use App\Mcp\Tools\GetRequisitionRecordTool;
+use App\Mcp\Tools\ListRequisitionRecordsTool;
+use App\Mcp\Tools\WorkspaceEditorTool;
+=======
+>>>>>>> theirs
 use App\Mcp\Tools\UpdateUserRecordTool;
 use App\Mcp\Tools\CreateUserRecordTool;
 use App\Mcp\Tools\UserManagementTool;
@@ -40,6 +51,17 @@ class OrdersServer extends Server
     protected string $instructions = 'Manages operational data across orders, products, users, sheets, WhatsApp messages, and budget transactions. Use tools to list, query, create, and update records where supported.';
 
     protected array $tools = [
+<<<<<<< ours
+        UserReportTool::class,
+        GetCategoryRecordTool::class,
+        ListCategoryRecordsTool::class,
+        UpdateRequisitionRecordTool::class,
+        CreateRequisitionRecordTool::class,
+        GetRequisitionRecordTool::class,
+        ListRequisitionRecordsTool::class,
+        WorkspaceEditorTool::class,
+=======
+>>>>>>> theirs
         UpdateUserRecordTool::class,
         CreateUserRecordTool::class,
         UserManagementTool::class,
