@@ -110,6 +110,48 @@ flowchart TD
     UI --> U
 ```
 
+## End-to-End Process Diagram
+
+```mermaid
+flowchart LR
+    A[User Browser UI] --> B[Inertia React Pages]
+    B --> C[Laravel Controllers]
+
+    subgraph Chat Runtime
+        C --> D[ChatController]
+        D --> E[ChatMemoryService]
+        D --> F[AgentMemoryService]
+        D --> G[OllamaToolRunner]
+        G --> H[Ollama Chat Model]
+        F --> I[Ollama Embedding Model]
+    end
+
+    subgraph Tooling and Data
+        G --> J[list_orders/get_order/create_order/edit_order]
+        G --> K[financial_report/merchant_report/call_center reports]
+        G --> L[create_task/create_report_task/get_report_task_status]
+        G --> M[send_whatsapp_message/setup_integration]
+        J --> N[(MySQL)]
+        K --> N
+        L --> N
+        M --> O[WhatsApp Provider APIs]
+        O --> P[/whatsapp/webhook]
+        P --> N
+    end
+
+    subgraph Background Execution
+        L --> Q[TaskService]
+        Q --> R[RunTaskJob Queue]
+        R --> S[Task Logs + Task Runs]
+        S --> N
+    end
+
+    E --> N
+    F --> N
+    D -->|stream/store response| B
+    B --> A
+```
+
 ## Tech Stack
 
 - **Backend:** Laravel 12, PHP 8.2+
@@ -165,6 +207,67 @@ OLLAMA_ENABLE_DYNAMIC_TOOLS=true
 WHATSAPP_PROVIDER=meta|twilio|africastalking|custom
 # ...provider-specific keys...
 ```
+
+## Embeddings Setup (Recommended)
+
+This project supports semantic memory retrieval through Ollama embeddings.
+
+1. Install an embedding model locally:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+2. Configure your `.env`:
+
+```env
+OLLAMA_EMBEDDING_MODEL=qwen3-embedding:0.6b
+OLLAMA_EMBEDDING_TIMEOUT=20
+```
+
+3. Reload config after editing `.env`:
+
+```bash
+php artisan optimize:clear
+```
+
+## Embeddings Verification
+
+Use these checks to confirm real embeddings are active:
+
+1. Confirm config value:
+
+```bash
+php artisan tinker
+config('services.ollama.embedding_model')
+```
+
+Expected: `qwen3-embedding:0.6b`
+
+2. Confirm stored memory rows are using Ollama embeddings:
+
+```sql
+select id, metadata, created_at
+from agent_memories
+order by created_at desc
+limit 10;
+```
+
+Expected in `metadata`:
+- `embedding_kind: "ollama"`
+- `embedding_model: "qwen3-embedding:0.6b"`
+
+If you see `embedding_kind: "fallback_hash"`, semantic embeddings were not used for those rows.
+
+3. Monitor runtime errors:
+
+```bash
+tail -f storage/logs/laravel.log
+```
+
+Look for:
+- `Embedding connection failed...`
+- `Embedding generation failed...`
 
 ## Bootstrap Essentials (Do Not Delete)
 

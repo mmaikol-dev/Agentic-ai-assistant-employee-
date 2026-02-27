@@ -2,6 +2,9 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\UpdateUserRecordTool;
+use App\Mcp\Tools\CreateUserRecordTool;
+use App\Mcp\Tools\UserManagementTool;
 use App\Mcp\Tools\CallCenterMonthlyReportTool;
 use App\Mcp\Tools\CallCenterDailyReportTool;
 use App\Mcp\Tools\GetBudgetTransactionRecordTool;
@@ -37,6 +40,9 @@ class OrdersServer extends Server
     protected string $instructions = 'Manages operational data across orders, products, users, sheets, WhatsApp messages, and budget transactions. Use tools to list, query, create, and update records where supported.';
 
     protected array $tools = [
+        UpdateUserRecordTool::class,
+        CreateUserRecordTool::class,
+        UserManagementTool::class,
         CallCenterMonthlyReportTool::class,
         CallCenterDailyReportTool::class,
         GetBudgetTransactionRecordTool::class,

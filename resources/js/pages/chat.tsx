@@ -1742,13 +1742,40 @@ function ToolResultsView({
     }
 
     const rows = Array.from(rowsByKey.values());
+    const latestReports = reports.slice(-1);
+    const latestOrderTables = orderTables.slice(-1);
+    const latestProductTables = productTables.slice(-1);
+    const latestIntegrations = integrations.slice(-1);
+    const latestWorkspaceResults = workspaceResults.slice(-1);
+    const latestOperationalResults = operationalResults.slice(-1);
+
+    const latestTaskResultsById = Array.from(
+        taskResults.reduce((acc, item) => {
+            acc.set(item.id, item);
+            return acc;
+        }, new Map<string, Extract<ToolResult, { type: 'task_workflow' | 'report_delivery_workflow' }>>()).values(),
+    );
+
+    const latestCreatedTasksById = Array.from(
+        createdTasks.reduce((acc, item) => {
+            acc.set(item.id, item);
+            return acc;
+        }, new Map<string, Extract<ToolResult, { type: 'task_created' }>>()).values(),
+    );
+
+    const latestAutoTablesById = Array.from(
+        autoTables.reduce((acc, table) => {
+            acc.set(table.id, table);
+            return acc;
+        }, new Map<string, AutoTableData>()).values(),
+    );
 
     return (
         <div className="space-y-2">
-            {reports.map((report, i) => (
+            {latestReports.map((report, i) => (
                 <FinancialReportView key={`report-${i}`} report={report} />
             ))}
-            {integrations.map((item, i) => (
+            {latestIntegrations.map((item, i) => (
                 <IntegrationResultView key={`integration-${i}`} result={item} />
             ))}
             {messagingResults.map((item, i) => (
@@ -1761,7 +1788,7 @@ function ToolResultsView({
                     {item.provider && <p>Provider: {item.provider}</p>}
                 </div>
             ))}
-            {taskResults.map((task, i) => (
+            {latestTaskResultsById.map((task, i) => (
                 <TaskWorkflowView
                     key={`task-${task.id}-${i}`}
                     task={task}
@@ -1769,7 +1796,7 @@ function ToolResultsView({
                     isConfirming={confirmingTaskId === task.id}
                 />
             ))}
-            {createdTasks.map((task, i) => (
+            {latestCreatedTasksById.map((task, i) => (
                 <div
                     key={`created-task-${task.id}-${i}`}
                     className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs text-fuchsia-900"
@@ -1787,7 +1814,7 @@ function ToolResultsView({
                     )}
                 </div>
             ))}
-            {workspaceResults.map((result, i) => (
+            {latestWorkspaceResults.map((result, i) => (
                 <div
                     key={`workspace-${i}`}
                     className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900"
@@ -1823,7 +1850,7 @@ function ToolResultsView({
                     )}
                 </div>
             ))}
-            {operationalResults.map((result, i) => (
+            {latestOperationalResults.map((result, i) => (
                 <div
                     key={`ops-${i}`}
                     className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
@@ -1839,21 +1866,21 @@ function ToolResultsView({
                     )}
                 </div>
             ))}
-            {orderTables.map((table, i) => (
+            {latestOrderTables.map((table, i) => (
                 <OrdersTable
                     key={`orders-table-${i}`}
                     result={table}
                     onViewOrder={onViewOrder}
                 />
             ))}
-            {productTables.map((table, i) => (
+            {latestProductTables.map((table, i) => (
                 <ProductStockTable
                     key={`product-table-${i}`}
                     result={table}
                     onViewProduct={onViewOrder}
                 />
             ))}
-            {autoTables.map((table, i) => (
+            {latestAutoTablesById.map((table, i) => (
                 <GenericAutoTable key={`${table.id}-${i}`} table={table} />
             ))}
             {infos.map((message, i) => (
