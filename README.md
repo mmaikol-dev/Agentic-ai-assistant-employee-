@@ -84,72 +84,84 @@ The AI can call tools to interact with `sheet_orders` and related workflows:
 - Email verification and optional two-factor auth settings.
 - Authenticated/verified route protection for core app features.
 
-## Flow Diagram
+## Workflow Diagrams
 
-```mermaid
-flowchart TD
-    U[User in Browser] --> UI[Inertia React UI]
-    UI -->|POST /chat/stream| LC[Laravel ChatController]
-    LC --> CM[ChatMemoryService]
-    LC --> OR[OllamaToolRunner]
-    OR -->|/api/chat| OLL[Ollama Model]
-    OLL -->|tool calls| OR
-    OR --> T1[List/Get/Create/Edit Orders]
-    OR --> T2[Financial Report Tool]
-    OR --> T3[Report Task Tool]
-    OR --> T4[WhatsApp Send Tool]
-    T1 --> DB[(MySQL: sheet_orders + app data)]
-    T2 --> DB
-    T3 --> DB
-    T3 --> FS[(storage/app/report-tasks)]
-    T4 --> WA[WhatsApp Provider API]
-    WA --> WH[Webhook /whatsapp/webhook]
-    WH --> DB
-    OR --> LC
-    LC -->|NDJSON stream| UI
-    UI --> U
-```
-
-## End-to-End Process Diagram
+### 1) Chat + Long-Term Memory Workflow
 
 ```mermaid
 flowchart LR
-    A[User Browser UI] --> B[Inertia React Pages]
-    B --> C[Laravel Controllers]
+    U[User /chat] --> C[ChatController]
+    C --> CM[ChatMemoryService recentMessages]
+    C --> AMR[AgentMemoryService retrieveRelevant]
+    AMR --> OE[Ollama Embeddings API]
+    AMR --> DB[(agent_memories)]
+    C --> OR[OllamaToolRunner]
+    OR --> OLL[Ollama /api/chat]
+    OLL --> OR
+    OR --> C
+    C --> CMP[ChatMemoryService persistExchange]
+    C --> AMS[AgentMemoryService storeEpisode]
+    AMS --> OE
+    AMS --> DB
+    C --> UI[NDJSON stream / JSON response]
+```
 
-    subgraph Chat Runtime
-        C --> D[ChatController]
-        D --> E[ChatMemoryService]
-        D --> F[AgentMemoryService]
-        D --> G[OllamaToolRunner]
-        G --> H[Ollama Chat Model]
-        F --> I[Ollama Embedding Model]
-    end
+### 2) Tool Execution + Policy Workflow
 
-    subgraph Tooling and Data
-        G --> J[list_orders/get_order/create_order/edit_order]
-        G --> K[financial_report/merchant_report/call_center reports]
-        G --> L[create_task/create_report_task/get_report_task_status]
-        G --> M[send_whatsapp_message/setup_integration]
-        J --> N[(MySQL)]
-        K --> N
-        L --> N
-        M --> O[WhatsApp Provider APIs]
-        O --> P[/whatsapp/webhook]
-        P --> N
-    end
+```mermaid
+flowchart TD
+    OR[OllamaToolRunner] --> P[AgentToolPolicyService]
+    P -->|allowed| E[ToolExecutionOrchestrator]
+    P -->|blocked| B[policy_blocked result]
+    E --> M[Built-in Tool Handler]
+    E --> I[McpToolInvokerService]
+    I --> MT[App MCP Tools]
+    E --> CR[ToolCriticService]
+    CR --> OR
+    E --> AM[AgentMemoryService store tool_outcome]
+    E --> UI[tool_result events to frontend]
+```
 
-    subgraph Background Execution
-        L --> Q[TaskService]
-        Q --> R[RunTaskJob Queue]
-        R --> S[Task Logs + Task Runs]
-        S --> N
-    end
+### 3) Task Scheduling Workflow
 
-    E --> N
-    F --> N
-    D -->|stream/store response| B
-    B --> A
+```mermaid
+flowchart LR
+    U[User asks schedule/background] --> OR[OllamaToolRunner]
+    OR --> CT[create_task tool]
+    CT --> TS[TaskService]
+    TS --> DB[(tasks/task_runs/task_logs)]
+    TS --> Q[Queue: RunTaskJob]
+    Q --> EX[Task execution]
+    EX --> DB
+    UI[/tasks and /tasks/{id}/stream/] --> DB
+```
+
+### 4) Reporting Workflow
+
+```mermaid
+flowchart LR
+    U[Reporting request] --> OR[OllamaToolRunner]
+    OR --> FR[financial_report]
+    OR --> MR[merchant_report]
+    OR --> CCR[call_center_daily/monthly_report]
+    FR --> DB[(sheet_orders + related tables)]
+    MR --> DB
+    CCR --> DB
+    U --> FE[/reports/financial/export]
+    FE --> DB
+    FE --> XLS[XLSX/CSV download]
+```
+
+### 5) WhatsApp Messaging Workflow
+
+```mermaid
+flowchart LR
+    U[Send message request] --> OR[OllamaToolRunner]
+    OR --> SWT[send_whatsapp_message tool]
+    SWT --> WS[WhatsappMessageSender]
+    WS --> API[Provider API: meta/twilio/africastalking/custom]
+    API --> WB[/whatsapp/webhook]
+    WB --> DB[(whatsapp + status data)]
 ```
 
 ## Tech Stack
@@ -268,6 +280,50 @@ tail -f storage/logs/laravel.log
 Look for:
 - `Embedding connection failed...`
 - `Embedding generation failed...`
+
+## Embeddings Observability
+
+Use these Artisan commands to measure memory quality and latency.
+
+1. Memory health snapshot (coverage + fallback ratio):
+
+```bash
+php artisan ai:memory:health
+```
+
+Optional:
+
+```bash
+php artisan ai:memory:health --user-id=1
+php artisan ai:memory:health --json
+```
+
+Health metrics include:
+- total memories
+- recent writes/accesses
+- ollama vs fallback embedding counts
+- embedding coverage percent
+- average content length
+- top scopes
+
+2. Lightweight benchmark (store + retrieve latency and hit rate):
+
+```bash
+php artisan ai:memory:benchmark --user-id=1 --iterations=10 --limit=4
+```
+
+Optional:
+
+```bash
+php artisan ai:memory:benchmark --user-id=1 --query="summarize my prior order updates" --iterations=20 --json
+```
+
+Benchmark output includes:
+- hit-rate percent
+- average hits per retrieval
+- store latency (avg/p95 ms)
+- retrieval latency (avg/p95 ms)
+- total round latency (avg/p95 ms)
 
 ## Bootstrap Essentials (Do Not Delete)
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AgentMemory;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -127,6 +128,108 @@ class AgentMemoryService
         }
 
         return $scored;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function healthMetrics(?int $userId = null): array
+    {
+        if (! $this->isReady()) {
+            return [
+                'ready' => false,
+                'user_id' => $userId,
+                'total_memories' => 0,
+                'recent_24h' => 0,
+                'recent_access_1h' => 0,
+                'ollama_embeddings' => 0,
+                'fallback_embeddings' => 0,
+                'embedding_coverage_percent' => 0.0,
+                'avg_content_length' => 0.0,
+                'top_scopes' => [],
+            ];
+        }
+
+        $query = AgentMemory::query();
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+
+        try {
+            $total = (clone $query)->count();
+            if ($total === 0) {
+                return [
+                    'ready' => true,
+                    'user_id' => $userId,
+                    'total_memories' => 0,
+                    'recent_24h' => 0,
+                    'recent_access_1h' => 0,
+                    'ollama_embeddings' => 0,
+                    'fallback_embeddings' => 0,
+                    'embedding_coverage_percent' => 0.0,
+                    'avg_content_length' => 0.0,
+                    'top_scopes' => [],
+                ];
+            }
+
+            $recent24h = (clone $query)
+                ->where('created_at', '>=', now()->subDay())
+                ->count();
+
+            $recentAccess1h = (clone $query)
+                ->whereNotNull('last_accessed_at')
+                ->where('last_accessed_at', '>=', now()->subHour())
+                ->count();
+
+            $ollamaCount = (clone $query)
+                ->where('metadata->embedding_kind', 'ollama')
+                ->count();
+
+            $fallbackCount = max(0, $total - $ollamaCount);
+            $coverage = $total > 0 ? round(($ollamaCount / $total) * 100, 2) : 0.0;
+
+            $driver = DB::connection()->getDriverName();
+            $lengthExpr = $driver === 'mysql' ? 'CHAR_LENGTH(content)' : 'LENGTH(content)';
+            $avgContentLength = (float) ((clone $query)->selectRaw("AVG({$lengthExpr}) as avg_len")->value('avg_len') ?? 0);
+
+            $topScopes = (clone $query)
+                ->select('scope')
+                ->selectRaw('COUNT(*) as aggregate_count')
+                ->groupBy('scope')
+                ->orderByDesc('aggregate_count')
+                ->limit(5)
+                ->get()
+                ->map(fn (AgentMemory $row): array => [
+                    'scope' => (string) $row->scope,
+                    'count' => (int) ($row->aggregate_count ?? 0),
+                ])
+                ->values()
+                ->all();
+
+            return [
+                'ready' => true,
+                'user_id' => $userId,
+                'total_memories' => $total,
+                'recent_24h' => $recent24h,
+                'recent_access_1h' => $recentAccess1h,
+                'ollama_embeddings' => $ollamaCount,
+                'fallback_embeddings' => $fallbackCount,
+                'embedding_coverage_percent' => $coverage,
+                'avg_content_length' => round($avgContentLength, 2),
+                'top_scopes' => $topScopes,
+            ];
+        } catch (QueryException $e) {
+            Log::warning('Unable to compute memory health metrics.', [
+                'error' => $e->getMessage(),
+                'user_id' => $userId,
+            ]);
+
+            return [
+                'ready' => false,
+                'user_id' => $userId,
+                'error' => 'metrics_query_failed',
+            ];
+        }
     }
 
     private function isReady(): bool
