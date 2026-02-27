@@ -133,7 +133,7 @@ flowchart LR
     TS --> Q[Queue: RunTaskJob]
     Q --> EX[Task execution]
     EX --> DB
-    UI[/tasks and /tasks/{id}/stream/] --> DB
+    UI["/tasks and /tasks/:id/stream"] --> DB
 ```
 
 ### 4) Reporting Workflow
@@ -143,11 +143,11 @@ flowchart LR
     U[Reporting request] --> OR[OllamaToolRunner]
     OR --> FR[financial_report]
     OR --> MR[merchant_report]
-    OR --> CCR[call_center_daily/monthly_report]
+    OR --> CCR["call_center_daily or call_center_monthly_report"]
     FR --> DB[(sheet_orders + related tables)]
     MR --> DB
     CCR --> DB
-    U --> FE[/reports/financial/export]
+    U --> FE["/reports/financial/export"]
     FE --> DB
     FE --> XLS[XLSX/CSV download]
 ```
@@ -160,7 +160,7 @@ flowchart LR
     OR --> SWT[send_whatsapp_message tool]
     SWT --> WS[WhatsappMessageSender]
     WS --> API[Provider API: meta/twilio/africastalking/custom]
-    API --> WB[/whatsapp/webhook]
+    API --> WB["/whatsapp/webhook"]
     WB --> DB[(whatsapp + status data)]
 ```
 
